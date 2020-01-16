@@ -1,0 +1,135 @@
+#!/usr/bin/env python3.7
+
+import os
+import time
+import signal
+import b9py
+import logging
+import argparse
+import yaml
+import getpass
+
+
+def sigint_handler(_signum, _frame):
+    global _running
+    print('\nCtrl-C shutdown.', end="\r\n")
+    _running = False
+
+
+def failed(srv_result):
+    print("Node Registration service has failed. {}".format(srv_result.status_type), end="\r\n")
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def yaml_load(dinput):
+    return yaml.load(dinput, Loader=yaml.FullLoader)
+
+
+def print_registrations(items):
+    title = '------------- Nodes '
+    print('{}{}'.format(title, '-' * (94 - len(title))))
+    fmt = "{:25}{:22}{:16}{:8}{}"
+    print(fmt.format('Node_Name',
+                     'Node_Host',
+                     'IP',
+                     'PID',
+                     'Timestamp'), end="\r\n")
+    print('-' * 94)
+
+    for item in items:
+        for regspec in item[1]:
+            print(fmt.format(regspec['nodename'],
+                             regspec['host'],
+                             str(regspec['IP']),
+                             str(regspec['pid']),
+                             time.strftime("%d %b %Y %H:%M:%S", time.localtime(regspec['timestamp']))),
+                  end="\r\n")
+
+
+_running = True
+
+if __name__ == "__main__":
+    print("\nB9 Node Tool", end="\r\n")
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    ap = argparse.ArgumentParser()
+    subparsers = ap.add_subparsers(dest='command')
+    subparsers.required = True
+
+    #  subparser for list
+    parser_list = subparsers.add_parser('list')
+
+    #  subparser for unregister
+    parser_unreg = subparsers.add_parser('unreg')
+    parser_unreg.add_argument("nodename", help="unregister this node.")
+
+    #  subparser for kill
+    parser_kill = subparsers.add_parser('kill')
+    parser_kill.add_argument("nodename", help="kill this node.")
+    parser_kill.add_argument("username", help="user name for node's host.")
+
+    args = vars(ap.parse_args())
+
+    master_uri = os.environ.get('B9_MASTER')
+    if master_uri is None:
+        master_uri = 'localhost'
+        print("B9 master URI is unspecified. Using localhost.", end="\r\n")
+
+    # Init B9 core
+    b9 = b9py.B9('b9node_cli', master_uri)
+    b9.start_logger(level=logging.INFO)
+    print(end="\r\n")
+
+    client = b9py.ServiceClient('b9node', None, 'master/registration/node', None, 5557, master_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        # List
+        if args['command'].lower() == 'list':
+            result = client.call_service(b9py.MessageFactory.create_node_list_message())
+            if not result.is_successful:
+                print("Registration service has failed. {}".format(result.status_type), end="\r\n")
+                os.kill(os.getpid(), signal.SIGKILL)
+            else:
+                print_registrations(result.result_data.data.items())
+
+        # Unregister
+        elif args['command'].lower() == 'unreg':
+            r = client.call_service(b9py.MessageFactory.create_node_unreg_message(args['nodename']))
+            if not r.is_successful:
+                failed(r)
+            else:
+                reg = r.result_data.data
+                if reg['found']:
+                    print("Node '{}' has been unregistered.".format(args['nodename']), end="\r\n")
+                else:
+                    print("Node '{}' not found.".format(args['nodename']), end="\r\n")
+
+        # Kill
+        elif args['command'].lower() == 'kill':
+            r = client.call_service(b9py.MessageFactory.create_node_lookup_message(args['nodename']))
+            if not r.is_successful:
+                failed(r)
+            else:
+                reg = r.result_data.data
+                if reg['found']:
+                    # Get password from user
+                    passwd = getpass.getpass(prompt="{}@{}'s password: ".format(args['username'], reg['host']),
+                                             stream=None)
+
+                    r = client.call_service(b9py.MessageFactory.create_node_kill_message(args['nodename'],
+                                                                                         args['username'], passwd))
+                    if not r.is_successful:
+                        failed(r)
+                    else:
+                        if reg['found']:
+                            reg = r.result_data.data
+                            print("Node '{}' kill status is '{}'.".format(args['nodename'], reg['status']), end="\r\n")
+                else:
+                    print("Node '{}' is not registered.".format(args['nodename']), end="\r\n")
+
+        print(end="\r\n")
+    else:
+        print("Unable to connect to Node Service.", end="\r\n")
+        print("Master running?", end="\r\n")

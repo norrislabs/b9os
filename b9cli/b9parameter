@@ -1,0 +1,100 @@
+#!/usr/bin/env python3.7
+
+import os
+import signal
+import logging
+import argparse
+import yaml
+from colorama import Fore
+import b9py
+
+
+# Control-C handler
+def sigint_handler(_sig, _frame):
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def failed(result):
+    print(Fore.RED + "\nParameter service has failed. {}".format(result.status_type), end="\r\n")
+    print(Fore.RESET)
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def yaml_load(dinput):
+    try:
+        return yaml.load(dinput, Loader=yaml.FullLoader)
+    except yaml.parser.ParserError:
+        print(Fore.RED + "\nInvaild parameter value of '{}'".format(dinput), end="\r\n")
+        print(Fore.RESET)
+        return None
+
+
+if __name__ == "__main__":
+    print("\nB9 Parameter Tool", end="\r\n")
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    ap = argparse.ArgumentParser()
+    subparsers = ap.add_subparsers(dest='command')
+    subparsers.required = True
+
+    #  subparser for list
+    parser_list = subparsers.add_parser('list')
+    parser_list.add_argument("namespace", help='namespace of values.')
+
+    #  subparser for get
+    parser_get = subparsers.add_parser('get')
+    parser_get.add_argument("namespace", help='namespace of values.')
+    parser_get.add_argument("name", help='name of parameter.')
+
+    #  subparser for put
+    parser_put = subparsers.add_parser('put')
+    parser_put.add_argument("namespace", help='namespace of values.')
+    parser_put.add_argument("name", help='name of parameter.')
+    parser_put.add_argument('value', type=yaml_load, help='value to store in parameter server.')
+
+    args = vars(ap.parse_args())
+
+    # Get the master's address
+    master_uri = os.environ.get('B9_MASTER')
+    if master_uri is None:
+        master_uri = 'localhost'
+        print("B9 master URI was not specified. Using localhost.", end="\r\n")
+
+    # Init B9 core
+    b9 = b9py.B9('b9parameter_cli', master_uri)
+    b9.start_logger(level=logging.INFO)
+    print(end="\r\n")
+
+    param_srv = b9py.Parameter(master_uri, 'b9parameter_cli', args['namespace'])
+
+    if args['command'].lower() == 'list':
+        r = param_srv.list()
+        if not r.is_successful:
+            failed(r)
+        else:
+            for reg in r.result_data.data:
+                print("{:16}{:30}{:12}{:16}{}".format(reg['namespace'], reg['nodename'],
+                                                      reg['type'], reg['name'], reg['value']), end="\r\n")
+
+    elif args['command'].lower() == 'put':
+        r = param_srv.put(args['name'], args['value'])
+        if not r.is_successful:
+            failed(r)
+        else:
+            print("Parameter {} has been set to {}".format(args['name'], args['value']), end="\r\n")
+
+    elif args['command'].lower() == 'get':
+        r = param_srv.get(args['name'])
+        if not r.is_successful:
+            failed(r)
+        else:
+            reg = r.result_data.data
+            if reg['found']:
+                print("{}\t{}\t{}\t{}\t{}".format(reg['namespace'], reg['nodename'],
+                                                  reg['type'], reg['name'], reg['value']), end="\r\n")
+            else:
+                print("Parameter {} does not exist in namespace {}.".format(args['name'], args['namespace']),
+                      end="\r\n")
+    print(end="\r\n")

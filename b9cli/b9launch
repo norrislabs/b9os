@@ -1,0 +1,175 @@
+#!/usr/bin/env python3.7
+
+import os
+import sys
+import time
+import signal
+import logging
+import argparse
+import subprocess
+import xml.etree.ElementTree as ET
+from colorama import Fore
+
+import b9py
+
+PYTHON_EXE = "python3.7"
+
+_running_nodes = []
+
+
+# Control-C handler
+def shutdown_handler(_sig, _frame):
+    print("Kill all nodes.")
+    for nx in _running_nodes:
+        nx.kill()
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def start_process(command, env, shell=False):
+    try:
+        return subprocess.Popen(command, env=env,
+                                stdin=sys.stdin, stdout=sys.stdout,
+                                shell=shell, universal_newlines=True, encoding='unicode')
+    except PermissionError:
+        return None
+
+
+def check_attributes(tag, names, attrib):
+    rs = True
+    for name in names:
+        if name not in attrib.keys():
+            print(Fore.RED + "Attribute '{}' is missing in '{}'.".format(name, tag), end='')
+            print(Fore.RESET)
+            rs = False
+    return rs
+
+
+def run(element: ET.Element):
+    if check_attributes("run", ['command'], element.attrib):
+        exe = element.attrib['command']
+        try:
+            p = start_process(exe, os.environ.copy(), True)
+            if p is None:
+                print(Fore.RED + "Permission error. Does '{}' have execute permissions?"
+                      .format(element.attrib['type']), end='')
+                print(Fore.RESET)
+            else:
+                print(Fore.YELLOW + "Running '{}'".format(exe), end='')
+                print(Fore.RESET)
+                _running_nodes.append(p)
+        except FileNotFoundError as e:
+            print(e)
+            print(Fore.RED + "File not found '{}'".format(exe), end='')
+            print(Fore.RESET)
+
+
+def node(element: ET.Element):
+    node_exe = os.path.join(workspace_dir, element.attrib['pkg'], element.attrib['type'])
+    if os.path.exists(node_exe):
+        cmd = [PYTHON_EXE, node_exe, "--nodename=" + element.attrib['name']]
+
+        # Set namespace if specified
+        if "ns" in element.attrib.keys():
+            cmd.append("--namespace=" + element.attrib['ns'])
+        elif "namespace" in element.attrib.keys():
+            cmd.append("--namespace=" + element.attrib['namespace'])
+        elif args['namespace']:
+            cmd.append("--namespace=" + args['namespace'])
+
+        if check_attributes("node", ['name', 'pkg', 'type'], element.attrib):
+            # Add any other arguments to execute command
+            for arg in element:
+                if arg.tag.lower() == "arg":
+                    if check_attributes("arg", ['name', 'value'], arg.attrib):
+                        cmd.append('--{}={}'.format(arg.attrib['name'], arg.attrib['value']))
+                    else:
+                        return
+
+            # Run node
+            p = start_process(cmd, os.environ.copy())
+            if p is None:
+                print(Fore.RED + "Permission error. Does '{}' have execute permissions?"
+                      .format(element.attrib['type']), end='')
+                print(Fore.RESET)
+            else:
+                print(Fore.YELLOW + "Running node at '{}'".format(node_exe), end='')
+                print(Fore.RESET)
+                _running_nodes.append(p)
+    else:
+        print(Fore.RED + "Node file '{}' not found.".format(node_exe))
+        print(Fore.RESET)
+
+
+def param(element: ET.Element):
+    if "ns" in element.attrib.keys():
+        ns = element.attrib['ns']
+    elif args['namespace']:
+        ns = args['namespace']
+    else:
+        ns = None   # Must be global
+
+    if check_attributes("param", ['name', 'value'], element.attrib):
+        param_srv = b9py.Parameter(master_uri, 'b9launch_cli', ns)
+        r = param_srv.put(element.attrib['name'], element.attrib['value'])
+        if not r.is_successful:
+            print(Fore.RED + "Unable to set parameter {} to {}."
+                  .format(element.attrib['name'], element.attrib['value']), end='')
+            print(Fore.RESET)
+
+
+if __name__ == "__main__":
+    print("B9 Launch Utility")
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    # Find B9 workspace
+    workspace_dir = b9py.B9.get_workspace_directory()
+    if not workspace_dir:
+        print(Fore.RED + "Workspace directory must be set in B9_DIR_WORKSPACE or the")
+        print(Fore.RED + "Launch utility must be started in the B9 root or workspace directory.")
+        print(Fore.RESET)
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    print("Current working directory is '{}'".format(os.getcwd()))
+    print("B9 Workspace directory is '{}'".format(workspace_dir))
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("file", default="", help="launch file name")
+    ap.add_argument("-s", "--namespace", default="", help="topic namespace")
+    args = vars(ap.parse_args())
+
+    # Get the master's address
+    master_uri = os.environ.get('B9_MASTER')
+    if master_uri is None:
+        master_uri = 'localhost'
+        print("B9 master URI was not specified. Using localhost.")
+
+    # Init B9 core
+    b9 = b9py.B9('b9launch_cli', master_uri)
+    b9.start_logger(level=logging.INFO)
+    print()
+
+    # Parse launch XML tree
+    tree = None
+    try:
+        tree = ET.parse(args['file'])
+    except FileNotFoundError:
+        print(Fore.RED + "Launch file not found." + Fore.RESET)
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    # Execute each launch command
+    root = tree.getroot()
+    for child in root:
+        if child.tag == "node":
+            node(child)
+        elif child.tag == "param":
+            param(child)
+        elif child.tag == "run":
+            run(child)
+
+    # Wait for any and all nodes to complete
+    while any(node.poll() is None for node in _running_nodes):
+        time.sleep(.5)
+
+    print("All done.")

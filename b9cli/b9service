@@ -1,0 +1,173 @@
+#!/usr/bin/env python3.7
+
+import os
+import signal
+import b9py
+import logging
+import argparse
+import yaml
+import time
+
+
+def sigint_handler(_signum, _frame):
+    global _running
+    print('\nCtrl-C shutdown.', end="\r\n")
+    _running = False
+
+
+def failed(srv_result):
+    print("Registration service has failed. {}".format(srv_result.status_type), end="\r\n")
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def yaml_load(dinput):
+    return yaml.load(dinput, Loader=yaml.FullLoader)
+
+
+def print_registrations(items):
+    title = '------ Services '
+    print('{}{}'.format(title, '-' * (120 - len(title))))
+    fmt = "{:35}{:16}{:16}{:8}{:25}{}"
+    print(fmt.format('Topic',
+                     'Message_Type',
+                     'IP',
+                     'Port',
+                     'Node_Name',
+                     'Node_Host'), end="\r\n")
+    print('-' * 120)
+
+    for item in items:
+        for regspec in item[1]:
+            if regspec['message_type'] is None:
+                msgtype = "Any"
+            else:
+                msgtype = regspec['message_type']
+            print(fmt.format(regspec['topic'],
+                             msgtype,
+                             regspec['IP'],
+                             str(regspec['port']),
+                             regspec['nodename'],
+                             regspec['owner_host'] + "/" + regspec['owner_ip']), end="\r\n")
+
+
+_running = True
+
+if __name__ == "__main__":
+    print("\nB9 Service Tool", end="\r\n")
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    ap = argparse.ArgumentParser()
+    subparsers = ap.add_subparsers(dest='command')
+    subparsers.required = True
+
+    #  subparser for list
+    parser_list = subparsers.add_parser('list')
+
+    #  subparser for call
+    parser_pub = subparsers.add_parser('call')
+    parser_pub.add_argument("topic", help="publish to this topic.")
+    parser_pub.add_argument("type", help="message type.")
+    parser_pub.add_argument("data", help="message data.", type=yaml_load)
+    parser_pub.add_argument('-i', '--interval', type=float, default=-1, help='repeat inverval in seconds.')
+    parser_pub.add_argument("-s", "--silent", action="store_true", help="do not display service result messages.")
+
+    #  subparser for info
+    parser_info = subparsers.add_parser('info')
+    parser_info.add_argument("topic", help="information on this service.")
+
+    #  subparser for unregister
+    parser_unreg = subparsers.add_parser('unreg')
+    parser_unreg.add_argument("topic", help="unregister this service.")
+
+    args = vars(ap.parse_args())
+
+    master_uri = os.environ.get('B9_MASTER')
+    if master_uri is None:
+        master_uri = 'localhost'
+        print("B9 master URI is unspecified. Using localhost.", end="\r\n")
+
+    # Init B9 core
+    b9 = b9py.B9('b9service_cli', master_uri)
+    b9.start_logger(level=logging.INFO)
+    print(end="\r\n")
+
+    client = b9py.ServiceClient('b9service', None, 'master/registration/topic', None, 5555, master_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        # List
+        if args['command'].lower() == 'list':
+            result = client.call_service(b9py.MessageFactory.create_srv_list_message())
+            if not result.is_successful:
+                print("Registration service has failed. {}".format(result.status_type), end="\r\n")
+                os.kill(os.getpid(), signal.SIGKILL)
+            else:
+                print_registrations(result.result_data.data.items())
+
+        # Call
+        elif args['command'].lower() == 'call':
+            caller = b9.create_service_client(args['topic'])
+            stat = caller.connect()
+            if not stat.is_successful:
+                print("Service call failed. {}".format(stat.status_type), end="\r\n")
+                os.kill(os.getpid(), signal.SIGKILL)
+
+            if args['type'].lower() == 'string':
+                msg = b9py.MessageFactory.create_message_string(args['data'], 'b9service')
+            elif args['type'].lower() == 'int':
+                msg = b9py.MessageFactory.create_message_int(args['data'], 'b9service')
+            elif args['type'].lower() == 'float':
+                msg = b9py.MessageFactory.create_message_float(args['data'], 'b9service')
+            elif args['type'].lower() == 'bool':
+                msg = b9py.MessageFactory.create_message_bool(args['data'], 'b9service')
+            elif args['type'].lower() == 'null':
+                msg = b9py.MessageFactory.create_message_null('b9service')
+            elif args['type'].lower() == 'list':
+                msg = b9py.MessageFactory.create_message_list(args['data'], 'b9service')
+            else:
+                msg = b9py.MessageFactory.create_message_dictionary(args['data'], 'b9service')
+
+            while _running:
+                result = caller.call_service(msg)
+                if result.is_successful:
+                    if not args['silent']:
+                        print("Result: {}".format(result.result_data), end="\r\n")
+                    if args['interval'] > 0:
+                        time.sleep(args['interval'])
+                    else:
+                        break
+                else:
+                    print("Service call failed. {}".format(result.status_type), end="\r\n")
+                    os.kill(os.getpid(), signal.SIGKILL)
+
+        # Info
+        elif args['command'].lower() == 'info':
+            r = client.call_service(b9py.MessageFactory.create_srv_lookup_message(args['topic']))
+            if not r.is_successful:
+                failed(r)
+            else:
+                reg = r.result_data.data
+                if reg['found']:
+                    print("{:30}{:12}{:16}{:8}{}".format(reg['topic'], reg['message_type'],
+                                                         reg['IP'], str(reg['port']),
+                                                         reg['nodename']), end="\r\n")
+                else:
+                    print("Service for '{}' not found.".format(args['topic']), end="\r\n")
+
+        # Unregister
+        elif args['command'].lower() == 'unreg':
+            r = client.call_service(b9py.MessageFactory.create_srv_unreg_message(args['topic']))
+            if not r.is_successful:
+                failed(r)
+            else:
+                reg = r.result_data.data
+                if reg['found']:
+                    print("Service for '{}' has been unregistered.".format(args['topic']), end="\r\n")
+                else:
+                    print("Service for '{}' not found.".format(args['topic']), end="\r\n")
+
+        print(end="\r\n")
+    else:
+        print("Unable to connect to Topic Name Service.", end="\r\n")
+        print("Master running?", end="\r\n")

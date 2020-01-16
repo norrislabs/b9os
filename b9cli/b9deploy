@@ -1,0 +1,309 @@
+#!/usr/bin/env python3.7
+
+import os
+import sys
+import signal
+import argparse
+import pysftp
+import xml.etree.ElementTree as ET
+from colorama import Fore
+import tempfile
+import getpass
+
+
+B9OS_OS_DIR = "b9os"
+B9OS_PY_DIR = "b9py"
+B9OS_CLI_DIR = "b9cli"
+WORKSPACE_DIR = "b9ws"
+
+executables = ['b9master', 'b9service', 'b9topic', 'b9parameter', 'b9node', 'b9run', 'b9launch']
+
+std_multi_node_exe = "b9ws_generic/cortex/cortex.py"
+
+
+# Control-C handler
+def shutdown_handler(_sig, _frame):
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def check_attributes(tag, names, attrib):
+    rs = True
+    for name in names:
+        if name not in attrib.keys():
+            print(Fore.RED + "Attribute '{}' is missing in '{}'.".format(name, tag), end='')
+            print(Fore.RESET)
+            rs = False
+    return rs
+
+
+def get_deploy_spec(element):
+    if check_attributes(element.tag, ['platform', 'node'], element.attrib):
+        platform = element.attrib['platform']
+        src_node = element.attrib['node']
+        if "destination-node" in element.attrib.keys():
+            dest_node = element.attrib['destination-node']
+        else:
+            dest_node = src_node
+        return platform, src_node, dest_node
+    else:
+        return None, None, None
+
+
+def deploy_os():
+    # Create root if it does not exist
+    if not sftp.isdir(rootdir):
+        print("Creating B9 root...")
+        sftp.mkdir(rootdir, mode=744)
+
+    with sftp.cd(rootdir):
+        # Create b9os directory if it does not exist
+        if not sftp.isdir(B9OS_OS_DIR):
+            print("Creating B9 OS directory structure...")
+            sftp.mkdir(B9OS_OS_DIR, mode=744)
+
+        print("Deploying B9 OS")
+
+        sftp.put("b9os/setupB9.sh", preserve_mtime=True)
+        sftp.put("b9os/requirements.txt", preserve_mtime=True)
+
+        print("  {}".format(b9_py_dir))
+        if not sftp.isdir(b9_py_dir):
+            sftp.mkdir(b9_py_dir, mode=744)
+        sftp.put_r(b9_py_dir, b9_py_dir, preserve_mtime=True)
+
+        print("  {}".format(b9_cli_dir))
+        if not sftp.isdir(b9_cli_dir):
+            sftp.mkdir(b9_cli_dir, mode=744)
+
+        # Copy the cammand line tools
+        for exe in executables:
+            exe_path = b9_cli_dir + "/" + exe
+            sftp.put(exe_path, exe_path, preserve_mtime=True)
+            sftp.chmod(exe_path, 744)
+
+        # Create b9 workspace directory if it does not exist
+        if not sftp.isdir(WORKSPACE_DIR):
+            print("Creating B9 workspace...")
+            sftp.mkdir(WORKSPACE_DIR, mode=744)
+            sftp.mkdir(WORKSPACE_DIR + "/launch", mode=744)
+
+
+def deploy_std_node(element):
+    platform, src_node, dest_node = get_deploy_spec(element)
+    if platform:
+        # We treat launch files just like any other node
+        if src_node == "launch":
+            print("Deploying launch files in '{}'".format(platform))
+        else:
+            print("Deploying standard node in '{}' from '{}' to '{}'".format(platform, src_node, dest_node))
+
+        # Copy node files
+        dest_dir = rootdir + "/" + WORKSPACE_DIR
+        with sftp.cd(dest_dir):
+            if not sftp.isdir(dest_node):
+                sftp.mkdir(dest_node, mode=744)
+
+            src_dir = platform + "/" + src_node
+            sftp.put_r(src_dir, dest_node, preserve_mtime=True)
+
+
+def deploy_multi_node(element):
+    platform, src_node, dest_node = get_deploy_spec(element)
+    if platform:
+        print("Deploying multi-node in '{}' from '{}' to '{}'".format(platform, src_node, dest_node))
+        config_files = "configuration-files" in element.attrib.keys() and \
+                       element.attrib['configuration-files'].lower() == "true"
+
+        dest_dir = rootdir + "/" + WORKSPACE_DIR
+        with sftp.cd(dest_dir):
+            if not sftp.isdir(dest_node):
+                sftp.mkdir(dest_node, mode=744)
+
+            # Copy standard program used by all multi-nodes
+            sftp.put(std_multi_node_exe, dest_node + "/cortex.py", preserve_mtime=True)
+
+            # Location of source multi node processors/models/configurations
+            src_dir = platform + "/" + src_node
+
+            # Copy processors
+            processors_dir = dest_node + "/processors"
+            print("   {}".format(processors_dir))
+            if not sftp.isdir(processors_dir):
+                sftp.mkdir(processors_dir, mode=744)
+            sftp.put_r(src_dir + "/processors", processors_dir, preserve_mtime=True)
+
+            # Copy models
+            models_dir = dest_node + "/models"
+            print("   {}".format(models_dir))
+            if not sftp.isdir(models_dir):
+                sftp.mkdir(models_dir, mode=744)
+            sftp.put_r(src_dir + "/models", models_dir, preserve_mtime=True)
+
+            # Optionally copy multi-node configuration files
+            if config_files:
+                configs_dir = dest_node + "/configurations"
+                print("   {}".format(configs_dir))
+                if not sftp.isdir(configs_dir):
+                    sftp.mkdir(configs_dir, mode=744)
+                sftp.put_r(src_dir + "/configurations", configs_dir, preserve_mtime=True)
+
+
+def deploy_launch_files(element):
+    if check_attributes(element.tag, ['platform'], element.attrib):
+        platform = element.attrib['platform']
+        spec = ET.Element('std-node')
+        spec.attrib['platform'] = platform
+        spec.attrib['node'] = "launch"
+
+        deploy_std_node(spec)
+
+
+def deploy_message(element):
+    if check_attributes(element.tag, ['text'], element.attrib):
+        print("*** " + element.attrib['text'])
+
+
+def indent(elem, level=0):
+    i = "\n" + level*"  "
+    if len(elem):
+        if not elem.text or not elem.text.strip():
+            elem.text = i + "  "
+
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = i
+
+        for elem in elem:
+            indent(elem, level+1)
+
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = i
+    else:
+        if level and (not elem.tail or not elem.tail.strip()):
+            elem.tail = i
+    return elem
+
+
+def deploy_a_file(element):
+    with tempfile.NamedTemporaryFile(mode="w+") as fp:
+        elem = indent(element)
+        text = ET.tostring(elem, encoding='unicode')
+
+        fp.write(text)
+        fp.flush()
+
+        dest_dir = rootdir + "/" + WORKSPACE_DIR
+        dest_file = dest_dir + "/" + element.attrib['path'] + "/" + element.attrib['name']
+
+        print("Created file '{}'".format(dest_file))
+        sftp.put(fp.name, dest_file, preserve_mtime=True)
+
+
+if __name__ == "__main__":
+    print("B9 Deployment Utility")
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("file", default="", help="deployment file name")
+    ap.add_argument("type", type=str, default="all", help="type of distribution (all, os, ws)")
+
+    ap.add_argument("-s", "--host", type=str, default=None, help="remote host")
+    ap.add_argument("-u", "--user", type=str, default=None, help="remote user name")
+    ap.add_argument("-r", "--root", type=str, default=None, help="remote root directory")
+
+    args = vars(ap.parse_args())
+
+    deploy_file = args['file']
+    host = None
+    user = None
+    passwd = None
+    rootdir = None
+    wsdir = None
+
+    # Make sure we are in the root directory
+    if not (os.path.exists(B9OS_OS_DIR)):
+        print(Fore.RED + "Current directory needs to be the B9 root (parent of b9os).", end='')
+        print(Fore.RESET)
+        sys.exit(0)
+
+    b9_cli_dir = B9OS_OS_DIR + "/" + B9OS_CLI_DIR
+    b9_py_dir = B9OS_OS_DIR + "/" + B9OS_PY_DIR
+
+    # Load deploy XML tree
+    tree = None
+    try:
+        tree = ET.parse(deploy_file)
+    except FileNotFoundError:
+        print(Fore.RED + "Deploy file not found.", end='')
+        print(Fore.RESET)
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    # Get SFTP parameters
+    root = tree.getroot()
+    if "root" in root.attrib.keys():
+        rootdir = root.attrib['root']
+    else:
+        rootdir = "B9"
+
+    # Host
+    if args["host"] is not None:
+        host = args['host']
+    elif "host" in root.attrib.keys():
+        host = root.attrib['host']
+
+    # User
+    if args["user"] is not None:
+        user = args['user']
+    elif "user" in root.attrib.keys():
+        user = root.attrib['user']
+
+    if host is None or user is None:
+        print(Fore.RED + "Host and/or user name was not provided in the deploy file or on the command line.", end='')
+        print(Fore.RESET)
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    # Password
+    if "password" in root.attrib.keys():
+        passwd = root.attrib['password']
+    else:
+        passwd = getpass.getpass(prompt="{}@{}'s password: ".format(user, host), stream=None)
+
+    print("Deploy B9 to host '{}' in directory '{}'".format(host, rootdir))
+
+    sftp = None
+    dir_list = []
+
+    # Connect to remote host via SFTP
+    try:
+        sftp = pysftp.Connection(host=host, username=user, password=passwd)
+    except Exception as e:
+        print(e)
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    print("Connected to '{}'".format(host))
+    print("Starting deployment...")
+
+    # Deploy B9 OS if requested
+    if args['type'] == 'all' or args['type'] == 'os':
+        deploy_os()
+
+    # Execute each deployment spec
+    if args['type'] == 'all' or args['type'] == 'ws':
+        for deploy_spec in root:
+            if deploy_spec.tag == "std-node":
+                deploy_std_node(deploy_spec)
+            elif deploy_spec.tag == "multi-node":
+                deploy_multi_node(deploy_spec)
+            elif deploy_spec.tag == "file":
+                deploy_a_file(deploy_spec)
+            elif deploy_spec.tag == "launch-files":
+                deploy_launch_files(deploy_spec)
+            elif deploy_spec.tag == "message":
+                deploy_message(deploy_spec)
+            else:
+                print(Fore.RED + "Unknown deployment spec {}.".format(deploy_spec.tag), end='')
+                print(Fore.RESET)
+
+    sftp.close()
+    print("Deployment complete.")

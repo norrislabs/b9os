@@ -1,0 +1,73 @@
+#!/usr/bin/env python3.7
+
+import os
+import sys
+import signal
+import subprocess
+import argparse
+import time
+from colorama import Fore
+import b9py
+
+PYTHON_EXE = "python3.7"
+
+
+# Control-C handler
+def shutdown_handler(_sig, _frame):
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def run(command, env):
+    try:
+        return subprocess.Popen(command, env=env, stdin=sys.stdin)
+    except PermissionError:
+        return None
+
+
+if __name__ == "__main__":
+    print("B9 Run Utility")
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    ws_dir = b9py.B9.get_workspace_directory()
+    if not ws_dir:
+        print(Fore.RED + "Workspace directory must be set in B9_DIR_WORKSPACE or the")
+        print(Fore.RED + "Run utility must be started in the B9 root or workspace directory.")
+        print(Fore.RESET)
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("package", help="package name")
+    ap.add_argument("type", help="executable program in package")
+    ap.add_argument("-n", "--nodename", default="", help="node name")
+    ap.add_argument("-s", "--namespace", default="", help="topic namespace")
+    ap.add_argument("-t", "--topic", default="", help="topic")
+    ap.add_argument("-f", "--file", default="", help="file name")
+    args = vars(ap.parse_args())
+
+    current_env = os.environ.copy()
+
+    exe = os.path.join(ws_dir, args['package'], args['type'])
+    cmd = [PYTHON_EXE, exe]
+
+    if args['file']:
+        cmd.append(args['file'])
+
+    if args['nodename']:
+        cmd.append("--nodename=" + args['nodename'])
+
+    if args['namespace']:
+        cmd.append("--namespace=" + args['namespace'])
+
+    if args['topic']:
+        cmd.append("--topic=" + args['topic'])
+
+    p = run(cmd, current_env)
+    if p is None:
+        print("Permission error. Does '{}' have execute permissions?".format(args['type']))
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    # Wait to complete
+    while p.poll() is None:
+        time.sleep(1)
+
+    print('Exited with return code %d' % p.returncode)

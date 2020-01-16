@@ -1,0 +1,342 @@
+#!/usr/bin/env python3.7
+
+import os
+import time
+import pickledb
+import logging
+import signal
+import paramiko
+import socket
+import b9py
+
+
+# Control-C handler
+def shutdown_handler(_sig, _frame):
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def db_put(db, reg_type, topic, value):
+    if db.exists(topic):
+        logging.debug("{} topic '{}' already registered by '{}'. Replacing.".format(reg_type, topic,
+                                                                                    db.get(topic)['nodename']))
+    db.set(topic, value)
+
+
+def db_put_multi(db, reg_type, topic, value):
+    nodename = value['nodename']
+    values = {}
+    if db.exists(topic):
+        values = db.get(topic)
+        if nodename in values.keys():
+            logging.debug("{} '{}' already subscribed to '{}'. Replacing.".format(reg_type, nodename, topic))
+    values[nodename] = value
+    db.set(topic, values)
+
+
+def db_get(db, reg_type, topic):
+    if not db.exists(topic):
+        logging.debug("{} topic '{}' is not registered.".format(reg_type, topic))
+        return {'found': False}
+    item = db.get(topic)
+    item['found'] = True
+    return item
+
+
+def db_get_multi(db, reg_type, topic, nodename=None):
+    if db.exists(topic):
+        values = db.get(topic)
+        if nodename is None:
+            values['found'] = True
+            return values
+        else:
+            if nodename in values.key():
+                item = values[nodename]
+                item['found'] = True
+                return item
+    logging.debug("{} topic '{}' is not registered.".format(reg_type, topic))
+    return {'found': False}
+
+
+def db_rem(db, reg_type, topic):
+    if not db.exists(topic):
+        logging.debug("{} topic '{}' is not registered.".format(reg_type, topic))
+        return {'found': False}
+    item = db.get(topic)
+    item['found'] = True
+    db.rem(topic)
+    return item
+
+
+def db_rem_multi(db, reg_type, topic, nodename):
+    if db.exists(topic):
+        values = db.get(topic)
+        if nodename in values.key():
+            item = values[nodename]
+            item['found'] = True
+            values.pop(nodename, None)
+            if len(values) > 0:
+                db.set(topic, values)
+            else:
+                db.rem(topic)
+            return item
+    logging.debug("{} topic '{}' is not registered.".format(reg_type, topic))
+    return {'found': False}
+
+
+def all_items(db):
+    item_list = {}
+    for topic in db.getall():
+        item = db.get(topic)
+        item_list[topic] = [item]
+    return item_list
+
+
+def all_items_multi(db):
+    item_list = {}
+    for topic in db.getall():
+        values = db.get(topic)
+        nodes = []
+        for item in values.items():
+            nodes.append(item[1])
+        item_list[topic] = nodes
+    return item_list
+
+
+def kill_node(host, username, password, pid):
+    try:
+        node_client = paramiko.SSHClient()
+        node_client.load_system_host_keys()
+        node_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        node_client.connect(host, username=username, password=password)
+
+        _, ss_stdout, ss_stderr = node_client.exec_command("kill -9 " + str(pid))
+        r_out, r_err = ss_stdout.readlines(), ss_stderr.read()
+
+        if len(r_err) > 0:
+            return b9py.B9Status.failed_status(status_text=r_err.decode("utf-8"))
+
+    except paramiko.ssh_exception.AuthenticationException as ex:
+        return b9py.B9Status.failed_status(status_text=str(ex))
+
+    except socket.gaierror as ex:
+        return b9py.B9Status.failed_status(status_text=str(ex))
+
+    except paramiko.ssh_exception.NoValidConnectionsError as ex:
+        return b9py.B9Status.failed_status(status_text=str(ex))
+
+    return b9py.B9Status.success_status()
+
+
+def topic_registration_cb(_request_topic, message: b9py.Message):
+    topic = message.data['topic']
+    msg = b9py.MessageFactory.create_message_string("OK", reg_srv.name)
+
+    # Register a published topic
+    if message.data['cmd'].lower() == 'register':
+        reg_entry = {'nodename': message.data['nodename'], 'topic': message.data['topic'],
+                     'IP': message.data['IP'], 'port': message.data['port'],
+                     'message_type': message.data['message_type'],
+                     'owner_ip': message.data['this_ip'], 'owner_host': message.data['this_host']}
+
+        if message.data['sub_cmd'].lower() == 'pub':
+            db_put(dbPub, "Publisher", topic, reg_entry)
+        elif message.data['sub_cmd'].lower() == 'sub':
+            db_put_multi(dbSub, "Subscriber", topic, reg_entry)
+        elif message.data['sub_cmd'].lower() == 'srv':
+            db_put(dbSrv, "Service", topic, reg_entry)
+
+    # Unregister a topic
+    elif message.data['cmd'].lower() == 'unregister':
+        if message.data['sub_cmd'].lower() == 'pub':
+            msg = b9py.MessageFactory.create_message_dictionary(db_rem(dbPub, "Publisher", topic))
+        elif message.data['sub_cmd'].lower() == 'sub':
+            msg = b9py.MessageFactory.create_message_dictionary(db_rem_multi(dbSub, "Subscriber",
+                                                                             topic, message.data['nodename']))
+        elif message.data['sub_cmd'].lower() == 'srv':
+            msg = b9py.MessageFactory.create_message_dictionary(db_rem(dbSrv, "Service", topic))
+
+    # Lookup the publisher of a topic
+    elif message.data['cmd'].lower() == 'lookup':
+        if message.data['sub_cmd'].lower() == 'pub':
+            msg = b9py.MessageFactory.create_message_dictionary(db_get(dbPub, "Publisher", topic))
+        elif message.data['sub_cmd'].lower() == 'sub':
+            msg = b9py.MessageFactory.create_message_dictionary(db_get_multi(dbSub, "Subscriber", topic))
+        elif message.data['sub_cmd'].lower() == 'srv':
+            msg = b9py.MessageFactory.create_message_dictionary(db_get(dbSrv, "Service", topic))
+
+    # List all published topics
+    elif message.data['cmd'].lower() == 'list':
+        if message.data['sub_cmd'].lower() == 'pub':
+            msg = b9py.MessageFactory.create_message_dictionary(all_items(dbPub))
+        elif message.data['sub_cmd'].lower() == 'sub':
+            msg = b9py.MessageFactory.create_message_dictionary(all_items_multi(dbSub))
+        elif message.data['sub_cmd'].lower() == 'srv':
+            msg = b9py.MessageFactory.create_message_dictionary(all_items(dbSrv))
+
+    # Purge all published topics
+    elif message.data['cmd'].lower() == 'purge':
+        if message.data['sub_cmd'].lower() == 'pub':
+            dbPub.deldb()
+        elif message.data['sub_cmd'].lower() == 'sub':
+            dbSub.deldb()
+        elif message.data['sub_cmd'].lower() == 'srv':
+            dbSrv.deldb()
+
+    return msg
+
+
+def node_registration_cb(_request_node, message: b9py.Message):
+    msg = b9py.MessageFactory.create_message_string("OK", node_srv.name)
+
+    # Register a node
+    if message.data['cmd'].lower() == 'register':
+        nodename = message.data['nodename']
+        node_entry = {'timestamp': message.data['timestamp'],
+                      'nodename': nodename,
+                      'IP': message.data['IP'],
+                      'host': message.data['host'],
+                      'pid': message.data['pid']}
+        dbNode.set(nodename, node_entry)
+
+    # Unregister a node
+    elif message.data['cmd'].lower() == 'unregister':
+        nodename = message.data['nodename']
+        msg = b9py.MessageFactory.create_message_dictionary(db_rem(dbNode, "Node", nodename))
+
+    # Lookup a node
+    elif message.data['cmd'].lower() == 'lookup':
+        nodename = message.data['nodename']
+        if dbNode.exists(nodename):
+            item = dbNode.get(nodename)
+            item['found'] = True
+        else:
+            item = {'found': False}
+        msg = b9py.MessageFactory.create_message_dictionary(item)
+
+    # List all the nodes
+    elif message.data['cmd'].lower() == 'list':
+        item_list = all_items(dbNode)
+        msg = b9py.MessageFactory.create_message_dictionary(item_list)
+
+    # Kill a node
+    elif message.data['cmd'].lower() == 'kill':
+        nodename = message.data['nodename']
+        if dbNode.exists(nodename):
+            item = dbNode.get(nodename)
+            item['found'] = True
+
+            # Remotely kill the node
+            status = kill_node(item['IP'], message.data['username'], message.data['password'], item['pid'])
+            item['status'] = status.message
+
+            # Unregister node
+            if status.is_successful:
+                db_rem(dbNode, "Node", nodename)
+        else:
+            item = {'found': False}
+        msg = b9py.MessageFactory.create_message_dictionary(item)
+
+    # Purge all nodes
+    elif message.data['cmd'].lower() == 'purge':
+        dbNode.deldb()
+
+    return msg
+
+
+def parameter_cb(_request_topic, message: b9py.Message):
+    msg = b9py.MessageFactory.create_message_string("OK", param_srv.name)
+
+    # Put a value in the parameter db
+    if message.data['cmd'].lower() == 'put':
+        param_name = message.data['namespace'] + "/" + message.data['name']
+        param_entry = {'nodename': message.data['nodename'],
+                       'namespace': message.data['namespace'],
+                       'type': message.data['type'],
+                       'name': message.data['name'],
+                       'value': message.data['value']}
+        dbParam.set(param_name, param_entry)
+
+    # Get a value from the parameter db
+    elif message.data['cmd'].lower() == 'get':
+        param_name = message.data['namespace'] + "/" + message.data['name']
+        if not dbParam.exists(param_name):
+            logging.debug("{} parameter is not set.".format(param_name))
+            result = {'namespace': message.data['namespace'],
+                      'type': 'str',
+                      'name': message.data['name'],
+                      'value': '?',
+                      'found': False}
+            msg = b9py.MessageFactory.create_message_dictionary(result)
+        else:
+            item = dbParam.get(param_name)
+            item['found'] = True
+            msg = b9py.MessageFactory.create_message_dictionary(item)
+
+    # List all name/values in the parameter db
+    elif message.data['cmd'].lower() == 'list':
+        item_list = []
+        for pname in dbParam.getall():
+            item = dbParam.get(pname)
+            if message.data['namespace'] == item['namespace']:
+                item_list.append(item)
+        msg = b9py.MessageFactory.create_message_list(item_list)
+
+    # Purge all values from the parameter db
+    elif message.data['cmd'].lower() == 'purge':
+        dbParam.deldb()
+
+    return msg
+
+
+if __name__ == "__main__":
+    print("B9 Master")
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    # Init 'Master' B9 core
+    b9 = b9py.B9('MASTER')
+    b9.start_logger(level=logging.DEBUG)
+
+    # Databases
+    dbPub = pickledb.load('pub_reg.db', auto_dump=False)
+    dbSub = pickledb.load('sub_reg.db', auto_dump=False)
+    dbSrv = pickledb.load('srv_reg.db', auto_dump=False)
+    dbParam = pickledb.load('param_reg.db', auto_dump=False)
+    dbNode = pickledb.load('node_reg.db', auto_dump=False)
+
+    # Setup Topic Registration Service
+    reg_srv = b9.create_service('master/registration/topic', b9py.Message.MSGTYPE_TOPIC_REGISTRATION,
+                                topic_registration_cb, None, 5555)
+    stat = reg_srv.advertise()
+    if stat.is_successful:
+        logging.info("Topic Name Service on port 5555.")
+    else:
+        logging.error("Unable to start Topic Name Service. {}".format(stat.status_type))
+
+    # Setup Parameter Service
+    param_srv = b9.create_service('master/parameter', b9py.Message.MSGTYPE_PARAMETER, parameter_cb, None, 5556)
+    stat = param_srv.advertise()
+    if stat.is_successful:
+        logging.info("Parameter Service on port 5556.")
+    else:
+        logging.error("Unable to start Parameter Service. {}".format(stat.status_type))
+
+    # Setup Node Registration Service
+    node_srv = b9.create_service('master/registration/node', b9py.Message.MSGTYPE_NODE_REGISTRATION,
+                                 node_registration_cb, None, 5557)
+    stat = node_srv.advertise()
+    if stat.is_successful:
+        logging.info("Node Service on port 5557.")
+    else:
+        logging.error("Unable to start Node Service. {}".format(stat.status_type))
+
+    # Register the master node
+    master_entry = {'timestamp': time.time(),
+                    'nodename': b9.nodename,
+                    'IP': b9.hostip,
+                    'host': b9.hostname,
+                    'pid': b9.pid}
+    dbNode.set(b9.nodename, master_entry)
+
+    b9.spin_forever()
