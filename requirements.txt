@@ -1,0 +1,11 @@
+paramiko
+msgpack
+pickleDB
+PyYAML
+pyzmq
+numpy
+Flask
+pysftp
+colorama
+pillow
+opencv-contrib-python
