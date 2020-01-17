@@ -16,11 +16,14 @@ class Publisher(object):
         self._namespace = namespace
         if namespace:
             if namespace == '/':
+                # Topic is in the bare root namespace
                 self._topic = self._namespace + topic.strip('/')
             else:
+                # Topic is in root specified namespace
                 self._namespace = namespace.strip('/')
                 self._topic = '/' + self._namespace + '/' + topic.strip('/')
         else:
+            # No namespace - use topic as is
             self._topic = topic
 
         self._message_type = message_type
