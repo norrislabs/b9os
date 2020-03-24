@@ -5,6 +5,13 @@ import signal
 import b9py
 import logging
 
+_running = True
+
+
+def sigint_handler(_signum, _frame):
+    print('\nCtrl-C shutdown.', end="\r\n")
+    os.kill(os.getpid(), signal.SIGKILL)
+
 
 def subscriber1_cb(topic, message: b9py.Message):
     print("Subscriber 1 - topic: {}, {}".format(topic, message))
@@ -43,7 +50,12 @@ sub1 = b9.create_subscriber('test/topic1', subscriber1_cb, None, 1000, 8, None)
 print("Create subscriber for 'test/topic2'...")
 sub2 = b9.create_subscriber('test/topic2', subscriber2_cb, None, 1000, 8, None)
 
-b9.spin_forever()
+# Control-C handler
+signal.signal(signal.SIGINT, sigint_handler)
 
-# while b9.spin_once():
-#    pass
+# b9.spin_forever()
+
+while b9.spin_once():
+    pass
+
+print("All done.")

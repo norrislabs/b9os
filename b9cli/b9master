@@ -296,7 +296,7 @@ if __name__ == "__main__":
 
     # Init 'Master' B9 core
     b9 = b9py.B9('MASTER')
-    b9.start_logger(level=logging.DEBUG)
+    b9.start_logger(level=logging.INFO)
 
     # Databases
     dbPub = pickledb.load('pub_reg.db', auto_dump=False)

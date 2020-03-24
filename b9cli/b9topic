@@ -18,6 +18,7 @@ import cv2
 
 colors = [Fore.LIGHTBLACK_EX, Fore.GREEN, Fore.MAGENTA, Fore.RED, Fore.BLUE, Fore.CYAN, Fore.YELLOW]
 assigned_colors = {}
+_running = True
 
 
 class FPS:
@@ -59,8 +60,9 @@ class FPS:
 
 def sigint_handler(_signum, _frame):
     global _running
-    print('\nCtrl-C shutdown.', end="\r\n")
     _running = False
+    print('\nCtrl-C shutdown.', end="\r\n")
+    os.kill(os.getpid(), signal.SIGKILL)
 
 
 def failed(result):
@@ -159,7 +161,6 @@ def print_registrations(regtype, items):
                              regspec['owner_host'] + "/" + regspec['owner_ip']), end="\r\n")
 
 
-_running = True
 _fps = FPS()
 
 
@@ -261,21 +262,19 @@ if __name__ == "__main__":
 
                 # Subscribe
                 sub = b9.create_subscriber(args['topic'], cb, None, args['rate'], args['queue_size'])
-                r = sub.subscribe_wait()
-                if r.is_successful:
-                    print("Subscribed to '{}'...\n".format(args['topic']), end="\r\n")
-                    b9.spin_forever()
+                print("Subscribed to '{}'...\n".format(args['topic']), end="\r\n")
+                signal.signal(signal.SIGINT, sigint_handler)
+                b9.spin_forever()
 
         # Hz
         elif args['command'].lower() == 'hz':
             sub = b9.create_subscriber(args['topic'], hz_cb, None, args['rate'], args['queue_size'])
-            r = sub.subscribe_wait()
-            if r.is_successful:
-                _fps.start()
-                b9.create_timer(5, fps_cb)
+            _fps.start()
+            b9.create_timer(5, fps_cb)
 
-                print("Measuring messages per second for '{}'...\n".format(args['topic']), end="\r\n")
-                b9.spin_forever()
+            print("Measuring messages per second for '{}'...\n".format(args['topic']), end="\r\n")
+            signal.signal(signal.SIGINT, sigint_handler)
+            b9.spin_forever()
 
         # Pub(lish)
         elif args['command'].lower() == 'pub':
