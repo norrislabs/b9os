@@ -137,6 +137,21 @@ class MessageFactory(object):
         return Message(Message.MSGTYPE_VECTOR3, {'X': x, 'Y': y, 'Z': z}, source)
 
     @staticmethod
+    def create_message_twist(an_x, an_y, an_z, ln_x, ln_y, ln_z, source=None):
+        assert (isinstance(an_x, float) and
+                isinstance(an_y, float) and
+                isinstance(an_z, float) and
+                isinstance(ln_x, float) and
+                isinstance(ln_y, float) and
+                isinstance(ln_z, float))
+        return Message(Message.MSGTYPE_TWIST, {'angular': {'X': an_x, 'Y': an_y, 'Z': an_z},
+                                               'linear': {'X': ln_x, 'Y': ln_y, 'Z': ln_z}}, source)
+
+    @staticmethod
+    def create_message_simple_twist(an_z, ln_x, source=None):
+        return MessageFactory.create_message_twist(0.0, 0.0, an_z, ln_x, 0.0, 0.0, source)
+
+    @staticmethod
     def create_message_image(image, source=None):
         assert (isinstance(image, bytes))
         return Message(Message.MSGTYPE_IMAGE, image, source)

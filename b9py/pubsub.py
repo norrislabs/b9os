@@ -1,3 +1,4 @@
+import threading
 import time
 import uuid
 import asyncio
@@ -120,6 +121,10 @@ class Publisher(object):
     @property
     def topic(self):
         return self._topic
+
+    @property
+    def message_type(self):
+        return self._message_type
 
     @property
     def namespace(self):
@@ -246,7 +251,7 @@ class Subscriber(object):
         # Incoming message queue
         self._queue = asyncio.Queue(maxsize=queue_size)
 
-    def subscribe(self, quiet=False):
+    def subscribe(self, quiet=False, retry_interval=0):
         sub_reg_msg = None
 
         self._sub_sock = self._ctx.socket(zmq.SUB)
@@ -258,47 +263,59 @@ class Subscriber(object):
         else:
             # Otherwise, lookup the publisher's URI using the topic
             if self._master_uri is not None:
-                result = b9py.ServiceClient.oneshot_service_call(self._node_name,
-                                                                 'master/registration/topic',
-                                                                 None,
-                                                                 self._create_req_lookup_message(self._topic),
-                                                                 5555, self._master_uri)
-                if result.is_successful:
-                    # Set the publisher's URI so we can connect
-                    if result.result_data.data['found']:
-                        self._pub_uri = "tcp://{}:{}".format(result.result_data.data['IP'],
-                                                             result.result_data.data['port'])
-                        self._message_type = result.result_data.data['message_type']
+                while True:
+                    result = b9py.ServiceClient.oneshot_service_call(self._node_name,
+                                                                     'master/registration/topic',
+                                                                     None,
+                                                                     self._create_req_lookup_message(self._topic),
+                                                                     5555, self._master_uri)
+                    if result.is_successful:
+                        # Set the publisher's URI so we can connect
+                        if result.result_data.data['found']:
+                            self._pub_uri = "tcp://{}:{}".format(result.result_data.data['IP'],
+                                                                 result.result_data.data['port'])
+                            self._message_type = result.result_data.data['message_type']
+                        else:
+                            # Unknown topic, not registered with master
+                            # Show a local error message
+                            err_msg = "'{}' on node '{}' failed. Topic '{}' {}".format(self._sub_name,
+                                                                                       self._node_name,
+                                                                                       self._topic,
+                                                                                       b9py.B9Status.ERR_TOPIC_NOTFOUND)
+                            if not quiet:
+                                logging.warning(err_msg)
+
+                            if retry_interval > 0:
+                                # Sleep a bit and try again
+                                time.sleep(1 / retry_interval)
+                                continue
+                            else:
+                                self._reset()
+                                return b9py.B9Status.failed_status(b9py.B9Status.ERR_TOPIC_NOTFOUND, err_msg)
+
+                        # Success so build the subscriber registration message
+                        # and get out of this damn "waiting for topic" loop
+                        sub_reg_msg = b9py.Message(b9py.Message.MSGTYPE_TOPIC_REGISTRATION,
+                                                   {'cmd': 'REGISTER', 'sub_cmd': 'SUB',
+                                                    'topic': self._topic,
+                                                    'message_type': result.result_data.data['message_type'],
+                                                    'nodename': self._node_name,
+                                                    'IP': result.result_data.data['IP'],
+                                                    'port': result.result_data.data['port'],
+                                                    'this_ip': self._this_host_ip,
+                                                    'this_host': self._this_host_name},
+                                                   self._node_name)
+                        break
                     else:
-                        # Unknown topic, not registered with master
-                        err_msg = "'{}' on node '{}' failed. Topic '{}' {}".format(self._sub_name,
-                                                                                   self._node_name,
-                                                                                   self._topic,
-                                                                                   b9py.B9Status.ERR_TOPIC_NOTFOUND)
-                        if not quiet:
-                            logging.warning(err_msg)
-                        return b9py.B9Status.failed_status(b9py.B9Status.ERR_TOPIC_NOTFOUND, err_msg)
-
-                    # Build subscriber registration message
-                    sub_reg_msg = b9py.Message(b9py.Message.MSGTYPE_TOPIC_REGISTRATION,
-                                               {'cmd': 'REGISTER', 'sub_cmd': 'SUB',
-                                                'topic': self._topic,
-                                                'message_type': result.result_data.data['message_type'],
-                                                'nodename': self._node_name,
-                                                'IP': result.result_data.data['IP'],
-                                                'port': result.result_data.data['port'],
-                                                'this_ip': self._this_host_ip,
-                                                'this_host': self._this_host_name},
-                                               self._node_name)
-
-                else:
-                    # Service call failed
-                    logging.error("'{}' on node '{}' failed. {}".format(self._sub_name,
-                                                                        self._node_name,
-                                                                        result.status_type))
-                    return result
+                        # Service call failed
+                        self._reset()
+                        logging.error("'{}' on node '{}' failed. {}".format(self._sub_name,
+                                                                            self._node_name,
+                                                                            result.status_type))
+                        return result
             else:
                 # No ability to subscribe. Give up.
+                self._reset()
                 err_msg = "'{}' on node '{}' failed. {}".format(self._sub_name,
                                                                 self._node_name,
                                                                 b9py.B9Status.ERR_NOMASTER)
@@ -331,23 +348,8 @@ class Subscriber(object):
             logging.error(err_msg)
             return b9py.B9Status.failed_status(b9py.B9Status.FAILED, err_msg)
 
-    def subscribe_wait(self, count=10000, delay=2):
-        r = self.subscribe()
-
-        for retry in range(count):
-            if r.is_successful:
-                break
-
-            if r.status_type == b9py.B9Status.ERR_TOPIC_NOTFOUND:
-                time.sleep(delay)
-                self._reset()
-                r = self.subscribe(quiet=True)
-            else:
-                break
-
-        return r
-
     def _reset(self):
+        self._pub_uri = None
         if self._task_sub is not None:
             self._task_sub.cancel()
             self._task_sub = None
@@ -389,6 +391,10 @@ class Subscriber(object):
     @property
     def publisher_uri(self):
         return self._pub_uri
+
+    @property
+    def have_publisher(self):
+        return self._pub_uri is not None
 
     async def _sub_task(self):
         try:

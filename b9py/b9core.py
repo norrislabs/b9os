@@ -31,6 +31,9 @@ class B9(object):
         for sigs in signals:
             loop.add_signal_handler(sigs, lambda sx=sigs: asyncio.create_task(self._shutdown()))
 
+        self._subscribers = []
+        self._have_all_publishers = False
+
         # Set a default master URI if not already specified and we are not the master
         if self._master_uri is None and not self._is_master:
             # Lookup master URI from the official environment variable
@@ -134,6 +137,10 @@ class B9(object):
         return self._master_uri
 
     @property
+    def have_all_publishers(self):
+        return self._have_all_publishers
+
+    @property
     def is_localhost(self):
         return self._master_uri == "localhost" or self._master_uri.startswith("127.0")
 
@@ -151,12 +158,40 @@ class B9(object):
         logging.info("B9 core shutdown.")
 
     @staticmethod
-    def spin_forever():
-        asyncio.get_event_loop().run_forever()
+    def _all_have_publishers(subscribers):
+        for subscriber in subscribers:
+            if not subscriber.have_publisher:
+                return False
+        return True
+
+    def spin_forever(self, delay=0.01, quiet=True):
+        if len(self._subscribers) > 0 and self._have_all_publishers is False:
+            while not self._all_have_publishers(self._subscribers):
+                for sub in self._subscribers:
+                    if not sub.have_publisher:
+                        sub.subscribe(quiet=quiet, retry_interval=0)
+                    asyncio.get_event_loop().run_until_complete(B9._spin_once(delay))
+        self._have_all_publishers = True
+        logging.info("All subscribers have publishers.")
+        self._spin_forever()
 
     @staticmethod
-    def spin_once(delay=0.001):
+    def _spin_forever():
+        asyncio.get_event_loop().run_forever()
+
+    def spin_once(self, delay=0.01, quiet=True):
         try:
+            if len(self._subscribers) > 0:
+                if not self._all_have_publishers(self._subscribers):
+                    for sub in self._subscribers:
+                        if not sub.have_publisher:
+                            sub.subscribe(quiet=quiet, retry_interval=0)
+                else:
+                    if not self._have_all_publishers:
+                        logging.info("All subscribers have publishers.")
+                        self._have_all_publishers = True
+            else:
+                self._have_all_publishers = True
             asyncio.get_event_loop().run_until_complete(B9._spin_once(delay))
             return True
         except asyncio.CancelledError:
@@ -187,11 +222,13 @@ class B9(object):
 
     def create_subscriber(self, topic, callback, namespace=None, rate=-1, queue_size=-1, pub_port=None, pub_host=None):
         # node_name, master_uri, topic, callback, rate, queue_size, pub_port, pub_host
-        return b9py.Subscriber(self._nodename, self._master_uri,
-                               topic, callback, namespace,
-                               rate, queue_size,
-                               self._host_ip, self._hostname,
-                               pub_port, pub_host,)
+        sub = b9py.Subscriber(self._nodename, self._master_uri,
+                              topic, callback, namespace,
+                              rate, queue_size,
+                              self._host_ip, self._hostname,
+                              pub_port, pub_host,)
+        self._subscribers.append(sub)
+        return sub
 
     def create_service(self, topic, message_type, callback, namespace=None, port=None):
         # node_name, master_uri, topic, message_type, callback, port, this_host_ip

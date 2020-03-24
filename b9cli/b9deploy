@@ -53,13 +53,13 @@ def deploy_os():
     # Create root if it does not exist
     if not sftp.isdir(rootdir):
         print("Creating B9 root...")
-        sftp.mkdir(rootdir, mode=744)
+        sftp.mkdir(rootdir)
 
     with sftp.cd(rootdir):
         # Create b9os directory if it does not exist
         if not sftp.isdir(B9OS_OS_DIR):
             print("Creating B9 OS directory structure...")
-            sftp.mkdir(B9OS_OS_DIR, mode=744)
+            sftp.mkdir(B9OS_OS_DIR)
 
         print("Deploying B9 OS")
 
@@ -68,12 +68,12 @@ def deploy_os():
 
         print("  {}".format(b9_py_dir))
         if not sftp.isdir(b9_py_dir):
-            sftp.mkdir(b9_py_dir, mode=744)
+            sftp.mkdir(b9_py_dir)
         sftp.put_r(b9_py_dir, b9_py_dir, preserve_mtime=True)
 
         print("  {}".format(b9_cli_dir))
         if not sftp.isdir(b9_cli_dir):
-            sftp.mkdir(b9_cli_dir, mode=744)
+            sftp.mkdir(b9_cli_dir)
 
         # Copy the cammand line tools
         for exe in executables:
@@ -194,8 +194,12 @@ def deploy_a_file(element):
         dest_dir = rootdir + "/" + WORKSPACE_DIR
         dest_file = dest_dir + "/" + element.attrib['path'] + "/" + element.attrib['name']
 
-        print("Created file '{}'".format(dest_file))
+        file_dir = dest_dir + "/" + element.attrib['path']
+        if not sftp.isdir(file_dir):
+            sftp.mkdir(file_dir, mode=744)
+
         sftp.put(fp.name, dest_file, preserve_mtime=True)
+        print("Created file '{}'".format(dest_file))
 
 
 if __name__ == "__main__":
@@ -274,9 +278,13 @@ if __name__ == "__main__":
     sftp = None
     dir_list = []
 
+    # Bad security! It's to fix a bug
+    cnopts = pysftp.CnOpts()
+    cnopts.hostkeys = None
+
     # Connect to remote host via SFTP
     try:
-        sftp = pysftp.Connection(host=host, username=user, password=passwd)
+        sftp = pysftp.Connection(host=host, username=user, password=passwd, cnopts=cnopts)
     except Exception as e:
         print(e)
         os.kill(os.getpid(), signal.SIGKILL)
