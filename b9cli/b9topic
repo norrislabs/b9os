@@ -137,18 +137,20 @@ def print_registrations(regtype, items):
     else:
         title = '------ Subscribers '
 
-    print('{}{}'.format(title, '-' * (120 - len(title))))
-    fmt = "{:35}{:16}{:16}{:8}{:25}{}"
+    print('{}{}'.format(title, '-' * (130 - len(title))))
+    fmt = "{:35}{:16}{:16}{:8}{:30}{}"
     print(fmt.format('Topic',
                      'Message_Type',
                      'IP',
                      'Port',
                      'Node_Name',
                      'Node_Host'), end="\r\n")
-    print('-' * 120)
+    print('-' * 130)
 
-    for item in items:
-        for regspec in item[1]:
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    for item in sorted_topics:
+        regspec = dict(items)[item][0]
+        if not regspec['nodename'].endswith('_cli'):
             if regspec['message_type'] is None:
                 msgtype = "Any"
             else:

@@ -5,6 +5,7 @@ import signal
 import socket
 import asyncio
 import logging
+from colorama import Fore
 
 import b9py
 import b9py.message
@@ -31,6 +32,7 @@ class B9(object):
         for sigs in signals:
             loop.add_signal_handler(sigs, lambda sx=sigs: asyncio.create_task(self._shutdown()))
 
+        self._publishers = []
         self._subscribers = []
         self._have_all_publishers = False
 
@@ -111,6 +113,14 @@ class B9(object):
     @staticmethod
     def get_os_directory():
         return B9._get_b9_directory("B9_DIR_OS", "b9os")
+
+    @property
+    def publishers(self):
+        return self._publishers
+
+    @property
+    def subscribers(self):
+        return self._subscribers
 
     @property
     def nodename(self):
@@ -216,9 +226,13 @@ class B9(object):
 
     def create_publisher(self, topic, message_type, namespace=None, rate=100, queue_size=-1):
         # nodename, master_uri, topic, message_type, namespace, rate, queue_size
-        return b9py.Publisher(self._nodename, self._master_uri,
-                              topic, message_type, namespace,
-                              rate, queue_size, self._host_ip, self._hostname)
+        pub = b9py.Publisher(self._nodename, self._master_uri,
+                             topic, message_type, namespace,
+                             rate, queue_size, self._host_ip, self._hostname)
+        self._publishers.append(pub)
+        print(Fore.CYAN + "Publisher '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
+        print(Fore.RESET)
+        return pub
 
     def create_subscriber(self, topic, callback, namespace=None, rate=-1, queue_size=-1, pub_port=None, pub_host=None):
         # node_name, master_uri, topic, callback, rate, queue_size, pub_port, pub_host
@@ -228,6 +242,8 @@ class B9(object):
                               self._host_ip, self._hostname,
                               pub_port, pub_host,)
         self._subscribers.append(sub)
+        print(Fore.CYAN + "Subscriber '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
+        print(Fore.RESET)
         return sub
 
     def create_service(self, topic, message_type, callback, namespace=None, port=None):
