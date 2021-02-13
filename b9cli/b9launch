@@ -47,20 +47,24 @@ def check_attributes(tag, names, attrib):
 def run(element: ET.Element):
     if check_attributes("run", ['command'], element.attrib):
         exe = element.attrib['command']
-        try:
-            p = start_process(exe, os.environ.copy(), True)
-            if p is None:
-                print(Fore.RED + "Permission error. Does '{}' have execute permissions?"
-                      .format(element.attrib['type']), end='')
-                print(Fore.RESET)
-            else:
-                print(Fore.YELLOW + "Running '{}'".format(exe), end='')
-                print(Fore.RESET)
-                _running_nodes.append(p)
-        except FileNotFoundError as e:
-            print(e)
-            print(Fore.RED + "File not found '{}'".format(exe), end='')
+        _run(exe)
+
+
+def _run(exe):
+    try:
+        p = start_process(exe, os.environ.copy(), True)
+        if p is None:
+            print(Fore.RED + "Permission error. Does '{}' have execute permissions?"
+                  .format(exe), end='')
             print(Fore.RESET)
+        else:
+            print(Fore.YELLOW + "Running '{}'".format(exe), end='')
+            print(Fore.RESET)
+            _running_nodes.append(p)
+    except FileNotFoundError as e:
+        print(e)
+        print(Fore.RED + "File not found '{}'".format(exe), end='')
+        print(Fore.RESET)
 
 
 def node(element: ET.Element):
@@ -81,7 +85,10 @@ def node(element: ET.Element):
             for arg in element:
                 if arg.tag.lower() == "arg":
                     if check_attributes("arg", ['name', 'value'], arg.attrib):
-                        cmd.append('--{}={}'.format(arg.attrib['name'], arg.attrib['value']))
+                        if arg.attrib['value'] == '' or arg.attrib['value'].lower() == 'na':
+                            cmd.append('--{}'.format(arg.attrib['name']))
+                        else:
+                            cmd.append('--{}={}'.format(arg.attrib['name'], arg.attrib['value']))
                     else:
                         return
 
@@ -137,7 +144,12 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("file", default="", help="launch file name")
     ap.add_argument("-s", "--namespace", default="", help="topic namespace")
+    ap.add_argument("-m", "--master", action="store_true", help="start Master before launch.")
     args = vars(ap.parse_args())
+
+    if args['master']:
+        _run("b9master")
+        time.sleep(3)
 
     # Get the master's address
     master_uri = os.environ.get('B9_MASTER')
