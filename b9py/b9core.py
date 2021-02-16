@@ -248,9 +248,12 @@ class B9(object):
 
     def create_service(self, topic, message_type, callback, namespace=None, port=None):
         # node_name, master_uri, topic, message_type, callback, port, this_host_ip
-        return b9py.Service(self._nodename, self._master_uri,
-                            topic, message_type,
-                            callback, namespace, port, self._host_ip, self._hostname)
+        srv = b9py.Service(self._nodename, self._master_uri,
+                           topic, message_type,
+                           callback, namespace, port, self._host_ip, self._hostname)
+        print(Fore.CYAN + "Service '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
+        print(Fore.RESET)
+        return srv
 
     def create_service_client(self, topic, namespace=None, srv_port=None, srv_host=None):
         # node_name, master_uri, topic, srv_port, srv_host
