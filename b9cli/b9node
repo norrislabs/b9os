@@ -28,7 +28,7 @@ def yaml_load(dinput):
 def print_registrations(items):
     title = '------------- Nodes '
     print('{}{}'.format(title, '-' * (94 - len(title))))
-    fmt = "{:25}{:22}{:16}{:8}{}"
+    fmt = "{:30}{:20}{:16}{:8}{}"
     print(fmt.format('Node_Name',
                      'Node_Host',
                      'IP',
@@ -36,14 +36,15 @@ def print_registrations(items):
                      'Timestamp'), end="\r\n")
     print('-' * 94)
 
-    for item in items:
-        for regspec in item[1]:
-            print(fmt.format(regspec['nodename'],
-                             regspec['host'],
-                             str(regspec['IP']),
-                             str(regspec['pid']),
-                             time.strftime("%d %b %Y %H:%M:%S", time.localtime(regspec['timestamp']))),
-                  end="\r\n")
+    sorted_nodes = dict(sorted(items, key=lambda i: i[1][0]['host']))
+    for item in sorted_nodes:
+        regspec = dict(items)[item][0]
+        print(fmt.format(regspec['nodename'],
+                         regspec['host'],
+                         str(regspec['IP']),
+                         str(regspec['pid']),
+                         time.strftime("%d %b %Y %H:%M:%S", time.localtime(regspec['timestamp']))),
+              end="\r\n")
 
 
 _running = True
