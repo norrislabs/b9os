@@ -152,7 +152,7 @@ class ServiceClient(object):
         self._srv_client_name = "SCL-{}-{}-{}".format(self._node_name, self._topic,
                                                       str(uuid.uuid1()).split('-')[0])
 
-        self._service_call_timeout = 5     # seconds
+        self._service_call_timeout = 10     # seconds
         self._max_retry = 3
         self._ctx = zmq.asyncio.Context()
         self._req_sock = self._ctx.socket(zmq.REQ)
