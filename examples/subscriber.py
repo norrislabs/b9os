@@ -29,6 +29,5 @@ if __name__ == "__main__":
     b9.start_logger(level=logging.INFO)
 
     sub = b9.create_subscriber(args['topic'], sub_callback, args['namespace'])
-    sub.subscribe_wait()
 
     b9.spin_forever()

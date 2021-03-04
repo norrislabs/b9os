@@ -36,6 +36,10 @@ class B9(object):
         self._subscribers = []
         self._have_all_publishers = False
 
+        self._spin_delay = -1.0
+        self._check_sub_count = 0
+        self._current_sub_count = 0
+
         # Set a default master URI if not already specified and we are not the master
         if self._master_uri is None and not self._is_master:
             # Lookup master URI from the official environment variable
@@ -175,35 +179,36 @@ class B9(object):
         return True
 
     def spin_forever(self, delay=0.01, quiet=True):
-        try:
-            if len(self._subscribers) > 0 and self._have_all_publishers is False:
-                while not self._all_have_publishers(self._subscribers):
-                    for sub in self._subscribers:
-                        if not sub.have_publisher:
-                            sub.subscribe(quiet=quiet, retry_interval=0)
-                        asyncio.get_event_loop().run_until_complete(B9._spin_once(delay))
-            self._have_all_publishers = True
-            logging.info("{} - All subscribers have publishers.".format(self._nodename))
-            asyncio.get_event_loop().run_forever()
-        except asyncio.CancelledError:
-            return False
+        while self.spin_once(delay, quiet):
+            pass
+        return False
 
     def spin_once(self, delay=0.01, quiet=True):
+        if delay != self._spin_delay:
+            self._check_sub_count = int(1 / delay)
+            self._current_sub_count = self._check_sub_count
+            self._spin_delay = delay
+
         try:
             if len(self._subscribers) > 0:
                 if not self._all_have_publishers(self._subscribers):
-                    # Try subscribing...
-                    for sub in self._subscribers:
-                        if not sub.have_publisher:
-                            sub.subscribe(quiet=quiet, retry_interval=0)
+                    # Try subscribing once a second...
+                    if self._current_sub_count >= self._check_sub_count:
+                        self._current_sub_count = 0
+                        for sub in self._subscribers:
+                            if not sub.have_publisher:
+                                sub.subscribe(quiet=quiet, retry_interval=0)
                 else:
                     if not self._have_all_publishers:
                         logging.info("{} - All subscribers have publishers.".format(self._nodename))
                         self._have_all_publishers = True
             else:
                 self._have_all_publishers = True
+
             asyncio.get_event_loop().run_until_complete(B9._spin_once(delay))
+            self._current_sub_count += 1
             return True
+
         except asyncio.CancelledError:
             return False
 

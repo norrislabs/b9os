@@ -81,7 +81,7 @@ def echo_text_cb(_topic, message: b9py.Message):
                 color = colors.pop()
                 assigned_colors[label] = color
 
-        print("Echo - {:20}{:30}{:10}{:5}{:12}{:12}{:8}{:5}{}{}{}"
+        print("Echo - {:20}{:34}{:10}{:5}{:12}{:12}{:8}{:5}{}{}{}"
               .format(str(message.timestamp),
                       message.source,
                       message.data["detection_type"],

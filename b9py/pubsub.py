@@ -93,10 +93,17 @@ class Publisher(object):
         loop = asyncio.get_event_loop()
         loop.create_task(self._pub_task())
 
+        # Wait enough time for any subscribers to pick up the new publisher registration
+        loop.run_until_complete(self._sleep(2))
+
         # Log and return success
         logging.info("'{}' advertised topic '{}' on node '{}'.".format(self._pub_name, self._topic,
                                                                        self._node_name))
         return b9py.B9Status.success_status()
+
+    @staticmethod
+    async def _sleep(delay):
+        await asyncio.sleep(delay)
 
     def _create_pub_reg_message(self):
         return b9py.Message(b9py.Message.MSGTYPE_TOPIC_REGISTRATION,
