@@ -12,10 +12,10 @@ import b9py.message
 
 
 class B9(object):
-    def __init__(self, nodename, master_uri=None):
+    def __init__(self, nodename, broker_uri=None):
         self._nodename = nodename
-        self._is_master = self._nodename.lower() == "master"
-        self._master_uri = master_uri
+        self._is_broker = self._nodename.lower() == "broker"
+        self._broker_uri = broker_uri
 
         self._init_success = True
         self._init_status = "'{}' is initialized and registered.".format(self._nodename)
@@ -40,24 +40,24 @@ class B9(object):
         self._check_sub_count = 0
         self._current_sub_count = 0
 
-        # Set a default master URI if not already specified and we are not the master
-        if self._master_uri is None and not self._is_master:
-            # Lookup master URI from the official environment variable
-            self._master_uri = os.environ.get('B9_MASTER')
-            if self._master_uri is None:
+        # Set a default broker URI if not already specified and we are not the broker
+        if self._broker_uri is None and not self._is_broker:
+            # Lookup broker URI from the official environment variable
+            self._broker_uri = os.environ.get('B9_BROKER')
+            if self._broker_uri is None:
                 # Still not specified so we have to assume localhost
-                self._master_uri = 'localhost'
+                self._broker_uri = 'localhost'
 
-        # Register this node if not the master and not a CLI tool
-        if not self._is_master:
+        # Register this node if not the broker and not a CLI tool
+        if not self._is_broker:
             if self._nodename.endswith('_cli'):
                 self._init_status = ""
             else:
                 result = b9py.ServiceClient.oneshot_service_call(self._nodename,
-                                                                 'master/registration/node',
+                                                                 'broker/registration/node',
                                                                  None,
                                                                  self._create_node_reg_message(),
-                                                                 5557, self._master_uri)
+                                                                 5557, self._broker_uri)
                 if not result.is_successful:
                     # Registration failed
                     self._init_success = False
@@ -90,8 +90,8 @@ class B9(object):
         logging.info("B9 version: {}".format(b9py.__version__))
         logging.info("B9 Logger has started.")
         logging.info("'{}' is running on {} at {}".format(self._nodename, self._hostname, self._host_ip))
-        if not self._is_master:
-            logging.info("'{}' is using master at {}".format(self._nodename, self._master_uri))
+        if not self._is_broker:
+            logging.info("'{}' is using broker at {}".format(self._nodename, self._broker_uri))
         logging.info("'{}' process ID (PID) is {}".format(self._nodename, self._pid))
         if len(self._init_status) > 0:
             if self._init_success:
@@ -135,8 +135,8 @@ class B9(object):
         return self._pid
 
     @property
-    def is_master(self):
-        return self._is_master
+    def is_broker(self):
+        return self._is_broker
 
     @property
     def hostname(self):
@@ -147,8 +147,8 @@ class B9(object):
         return self._host_ip
 
     @property
-    def master_uri(self):
-        return self._master_uri
+    def broker_uri(self):
+        return self._broker_uri
 
     @property
     def have_all_publishers(self):
@@ -156,7 +156,7 @@ class B9(object):
 
     @property
     def is_localhost(self):
-        return self._master_uri == "localhost" or self._master_uri.startswith("127.0")
+        return self._broker_uri == "localhost" or self._broker_uri.startswith("127.0")
 
     @staticmethod
     async def _shutdown():
@@ -230,8 +230,8 @@ class B9(object):
         return asyncio.get_event_loop().create_task(self._periodic(self._nodename, interval, callback))
 
     def create_publisher(self, topic, message_type, namespace=None, rate=100, queue_size=-1):
-        # nodename, master_uri, topic, message_type, namespace, rate, queue_size
-        pub = b9py.Publisher(self._nodename, self._master_uri,
+        # nodename, broker_uri, topic, message_type, namespace, rate, queue_size
+        pub = b9py.Publisher(self._nodename, self._broker_uri,
                              topic, message_type, namespace,
                              rate, queue_size, self._host_ip, self._hostname)
         self._publishers.append(pub)
@@ -240,8 +240,8 @@ class B9(object):
         return pub
 
     def create_subscriber(self, topic, callback, namespace=None, rate=-1, queue_size=-1, pub_port=None, pub_host=None):
-        # node_name, master_uri, topic, callback, rate, queue_size, pub_port, pub_host
-        sub = b9py.Subscriber(self._nodename, self._master_uri,
+        # node_name, broker_uri, topic, callback, rate, queue_size, pub_port, pub_host
+        sub = b9py.Subscriber(self._nodename, self._broker_uri,
                               topic, callback, namespace,
                               rate, queue_size,
                               self._host_ip, self._hostname,
@@ -252,8 +252,8 @@ class B9(object):
         return sub
 
     def create_service(self, topic, message_type, callback, namespace=None, port=None):
-        # node_name, master_uri, topic, message_type, callback, port, this_host_ip
-        srv = b9py.Service(self._nodename, self._master_uri,
+        # node_name, broker_uri, topic, message_type, callback, port, this_host_ip
+        srv = b9py.Service(self._nodename, self._broker_uri,
                            topic, message_type,
                            callback, namespace, port, self._host_ip, self._hostname)
         print(Fore.CYAN + "Service '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
@@ -261,8 +261,8 @@ class B9(object):
         return srv
 
     def create_service_client(self, topic, namespace=None, srv_port=None, srv_host=None):
-        # node_name, master_uri, topic, srv_port, srv_host
-        return b9py.ServiceClient(self._nodename, self._master_uri,
+        # node_name, broker_uri, topic, srv_port, srv_host
+        return b9py.ServiceClient(self._nodename, self._broker_uri,
                                   topic, namespace,
                                   srv_port, srv_host)
 
@@ -273,7 +273,7 @@ class B9Status(object):
     ERR_TIMEOUT = 'ERR_TIMEOUT'
     ERR_CONN_REFUSED = 'ERR_CONN_REFUSED'
     ERR_TOPIC_NOTFOUND = 'ERR_TOPIC_NOTFOUND'
-    ERR_NOMASTER = 'ERR_NOMASTER'
+    ERR_NOBROKER = 'ERR_NOBROKER'
     ERR_QUEUEFULL = 'ERR_QUEUEFULL'
     ERR_WRONG_MESSAGE = 'ERR_WRONG_MESSAGE'
     ERR_CANCELED = 'ERR_CANCELED'

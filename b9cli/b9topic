@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.7
+#!/usr/bin/env python3
 
 import os
 import signal
@@ -210,19 +210,19 @@ if __name__ == "__main__":
 
     args = vars(ap.parse_args())
 
-    # Get the master's address
-    master_uri = os.environ.get('B9_MASTER')
-    if master_uri is None:
-        master_uri = 'localhost'
-        print("B9 master URI was not specified. Using localhost.", end="\r\n")
+    # Get the broker's address
+    broker_uri = os.environ.get('B9_BROKER')
+    if broker_uri is None:
+        broker_uri = 'localhost'
+        print("B9 broker URI was not specified. Using localhost.", end="\r\n")
 
     # Init B9 core
-    b9 = b9py.B9('b9topic_cli', master_uri)
+    b9 = b9py.B9('b9topic_cli', broker_uri)
     b9.start_logger(level=logging.DEBUG)
     print(end="\r\n")
 
     # Execute the specified command
-    client = b9py.ServiceClient('b9topic', None, 'master/registration/topic', None, 5555, master_uri)
+    client = b9py.ServiceClient('b9topic', None, 'broker/registration/topic', None, 5555, broker_uri)
     stat = client.connect()
     if stat.is_successful:
         # List
@@ -312,4 +312,4 @@ if __name__ == "__main__":
         print(end="\r\n")
     else:
         print("Unable to connect to Topic Name Service.", end="\r\n")
-        print("Master running?", end="\r\n")
+        print("Broker running?", end="\r\n")

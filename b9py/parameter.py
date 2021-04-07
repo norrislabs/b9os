@@ -2,8 +2,8 @@ import b9py
 
 
 class Parameter(object):
-    def __init__(self, master_uri, nodename, namespace=None):
-        self._master_uri = master_uri
+    def __init__(self, broker_uri, nodename, namespace=None):
+        self._broker_uri = broker_uri
         self._nodename = nodename
         if namespace:
             self._namespace = namespace
@@ -12,26 +12,26 @@ class Parameter(object):
 
     def put(self, name, value):
         result = b9py.ServiceClient.oneshot_service_call(self._namespace,
-                                                         'master/parameter',
+                                                         'broker/parameter',
                                                          None,
                                                          self._create_param_put_message(name, value),
-                                                         5556, self._master_uri)
+                                                         5556, self._broker_uri)
         return result
 
     def get(self, name):
         result = b9py.ServiceClient.oneshot_service_call(self._namespace,
-                                                         'master/parameter',
+                                                         'broker/parameter',
                                                          None,
                                                          self._create_param_get_message(name),
-                                                         5556, self._master_uri)
+                                                         5556, self._broker_uri)
         return result
 
     def list(self):
         result = b9py.ServiceClient.oneshot_service_call(self._namespace,
-                                                         'master/parameter',
+                                                         'broker/parameter',
                                                          None,
                                                          self._create_param_list_message(),
-                                                         5556, self._master_uri)
+                                                         5556, self._broker_uri)
         return result
 
     def _create_param_put_message(self, name, value: b9py.Message):

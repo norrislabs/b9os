@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.7
+#!/usr/bin/env python3
 
 import os
 import signal
@@ -56,18 +56,18 @@ if __name__ == "__main__":
 
     args = vars(ap.parse_args())
 
-    # Get the master's address
-    master_uri = os.environ.get('B9_MASTER')
-    if master_uri is None:
-        master_uri = 'localhost'
-        print("B9 master URI was not specified. Using localhost.", end="\r\n")
+    # Get the broker's address
+    broker_uri = os.environ.get('B9_BROKER')
+    if broker_uri is None:
+        broker_uri = 'localhost'
+        print("B9 broker URI was not specified. Using localhost.", end="\r\n")
 
     # Init B9 core
-    b9 = b9py.B9('b9parameter_cli', master_uri)
+    b9 = b9py.B9('b9parameter_cli', broker_uri)
     b9.start_logger(level=logging.INFO)
     print(end="\r\n")
 
-    param_srv = b9py.Parameter(master_uri, 'b9parameter_cli', args['namespace'])
+    param_srv = b9py.Parameter(broker_uri, 'b9parameter_cli', args['namespace'])
 
     if args['command'].lower() == 'list':
         r = param_srv.list()

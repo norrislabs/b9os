@@ -8,10 +8,10 @@ import b9py
 
 
 class Publisher(object):
-    def __init__(self, nodename, master_uri, topic, message_type, namespace, rate, queue_size,
+    def __init__(self, nodename, broker_uri, topic, message_type, namespace, rate, queue_size,
                  this_host_ip, this_host_name):
         self._node_name = nodename
-        self._master_uri = master_uri
+        self._broker_uri = broker_uri
 
         self._namespace = namespace
         if namespace:
@@ -45,14 +45,14 @@ class Publisher(object):
         self._queue = asyncio.Queue(maxsize=queue_size)
 
     def advertise(self):
-        # Register this topic publisher with the Master Topic Name Service
-        if self._master_uri is not None:
+        # Register this topic publisher with the Broker Topic Name Service
+        if self._broker_uri is not None:
             # Lookup to see if already registered
             result = b9py.ServiceClient.oneshot_service_call(self._node_name,
-                                                             'master/registration/topic',
+                                                             'broker/registration/topic',
                                                              None,
                                                              self._create_req_lookup_message(self._topic),
-                                                             5555, self._master_uri)
+                                                             5555, self._broker_uri)
 
             if result.is_successful and result.result_data.data['found']:
                 # Reuse the port number registered before
@@ -64,7 +64,7 @@ class Publisher(object):
                     err_msg = "'{}' on node '{}' failed. {}".format(self._pub_name, self._node_name,
                                                                     ex.strerror)
                     logging.error(err_msg)
-                    return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOMASTER, err_msg)
+                    return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOBROKER, err_msg)
 
                 logging.info("'{}' is reusing the port {}".format(self._pub_name, self._port))
             else:
@@ -73,10 +73,10 @@ class Publisher(object):
 
             # Register
             result = b9py.ServiceClient.oneshot_service_call(self._node_name,
-                                                             'master/registration/topic',
+                                                             'broker/registration/topic',
                                                              None,
                                                              self._create_pub_reg_message(),
-                                                             5555, self._master_uri)
+                                                             5555, self._broker_uri)
             if not result.is_successful:
                 # Service call failed
                 logging.error("'{}' on node '{}' failed. {}".format(self._pub_name, self._node_name,
@@ -85,9 +85,9 @@ class Publisher(object):
         else:
             # No ability to subscribe. Give up.
             err_msg = "'{}' on node '{}' failed. {}".format(self._pub_name, self._node_name,
-                                                            b9py.B9Status.ERR_NOMASTER)
+                                                            b9py.B9Status.ERR_NOBROKER)
             logging.error(err_msg)
-            return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOMASTER, err_msg)
+            return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOBROKER, err_msg)
 
         # Activate publisher
         loop = asyncio.get_event_loop()
@@ -213,7 +213,7 @@ class Publisher(object):
 
 
 class Subscriber(object):
-    def __init__(self, nodename, master_uri, topic, callback, namespace, rate, queue_size,
+    def __init__(self, nodename, broker_uri, topic, callback, namespace, rate, queue_size,
                  this_host_ip, this_host_name, pub_port, pub_host):
         self._node_name = nodename
         self._callback = callback
@@ -234,7 +234,7 @@ class Subscriber(object):
         self._this_host_ip = this_host_ip
         self._this_host_name = this_host_name
 
-        self._master_uri = master_uri
+        self._broker_uri = broker_uri
         self._pub_host = pub_host
         self._pub_port = pub_port
         self._pub_uri = None
@@ -268,13 +268,13 @@ class Subscriber(object):
             self._pub_uri = "tcp://{}:{}".format(self._pub_host, self._pub_port)
         else:
             # Otherwise, lookup the publisher's URI using the topic
-            if self._master_uri is not None:
+            if self._broker_uri is not None:
                 while True:
                     result = b9py.ServiceClient.oneshot_service_call(self._node_name,
-                                                                     'master/registration/topic',
+                                                                     'broker/registration/topic',
                                                                      None,
                                                                      self._create_req_lookup_message(self._topic),
-                                                                     5555, self._master_uri)
+                                                                     5555, self._broker_uri)
                     if result.is_successful:
                         # Set the publisher's URI so we can connect
                         if result.result_data.data['found']:
@@ -282,7 +282,7 @@ class Subscriber(object):
                                                                  result.result_data.data['port'])
                             self._message_type = result.result_data.data['message_type']
                         else:
-                            # Unknown topic, not registered with master
+                            # Unknown topic, not registered with broker
                             # Show a local error message
                             err_msg = "'{}' on node '{}' failed. Topic '{}' {}".format(self._sub_name,
                                                                                        self._node_name,
@@ -324,19 +324,19 @@ class Subscriber(object):
                 self._reset()
                 err_msg = "'{}' on node '{}' failed. {}".format(self._sub_name,
                                                                 self._node_name,
-                                                                b9py.B9Status.ERR_NOMASTER)
+                                                                b9py.B9Status.ERR_NOBROKER)
                 logging.error(err_msg)
-                return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOMASTER, err_msg)
+                return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOBROKER, err_msg)
 
         # Connect to publisher
         self._sub_sock.connect(self._pub_uri)
 
         # Register the subscription
         result = b9py.ServiceClient.oneshot_service_call(self._node_name,
-                                                         'master/registration/topic',
+                                                         'broker/registration/topic',
                                                          None,
                                                          sub_reg_msg,
-                                                         5555, self._master_uri)
+                                                         5555, self._broker_uri)
         if result.is_successful:
             # Activate subscriber
             loop = asyncio.get_event_loop()

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.7
+#!/usr/bin/env python3
 
 import os
 import time
@@ -7,6 +7,7 @@ import logging
 import signal
 import paramiko
 import socket
+import argparse
 import b9py
 
 
@@ -131,6 +132,9 @@ def topic_registration_cb(_request_topic, message: b9py.Message):
     topic = message.data['topic']
     msg = b9py.MessageFactory.create_message_string("OK", reg_srv.name)
 
+    if args['verbose']:
+        logging.info("Topic Registration - '{}', topic: '{}'".format(message.data['cmd'], topic))
+
     # Register a published topic
     if message.data['cmd'].lower() == 'register':
         reg_entry = {'nodename': message.data['nodename'], 'topic': message.data['topic'],
@@ -188,9 +192,16 @@ def topic_registration_cb(_request_topic, message: b9py.Message):
 def node_registration_cb(_request_node, message: b9py.Message):
     msg = b9py.MessageFactory.create_message_string("OK", node_srv.name)
 
+    nodename = "NA"
+    if "nodename" in message.data:
+        nodename = message.data['nodename']
+
+    if args['verbose']:
+        logging.info("Node Registration - '{}', topic: '{}'".format(message.data['cmd'],
+                                                                    nodename))
+
     # Register a node
     if message.data['cmd'].lower() == 'register':
-        nodename = message.data['nodename']
         node_entry = {'timestamp': message.data['timestamp'],
                       'nodename': nodename,
                       'IP': message.data['IP'],
@@ -200,12 +211,10 @@ def node_registration_cb(_request_node, message: b9py.Message):
 
     # Unregister a node
     elif message.data['cmd'].lower() == 'unregister':
-        nodename = message.data['nodename']
         msg = b9py.MessageFactory.create_message_dictionary(db_rem(dbNode, "Node", nodename))
 
     # Lookup a node
     elif message.data['cmd'].lower() == 'lookup':
-        nodename = message.data['nodename']
         if dbNode.exists(nodename):
             item = dbNode.get(nodename)
             item['found'] = True
@@ -220,7 +229,6 @@ def node_registration_cb(_request_node, message: b9py.Message):
 
     # Kill a node
     elif message.data['cmd'].lower() == 'kill':
-        nodename = message.data['nodename']
         if dbNode.exists(nodename):
             item = dbNode.get(nodename)
             item['found'] = True
@@ -245,6 +253,11 @@ def node_registration_cb(_request_node, message: b9py.Message):
 
 def parameter_cb(_request_topic, message: b9py.Message):
     msg = b9py.MessageFactory.create_message_string("OK", param_srv.name)
+
+    if args['verbose']:
+        logging.info("Parameter - '{}', '{}' = '{}'".format(message.data['cmd'],
+                                                            message.data['name'],
+                                                            message.data['value']))
 
     # Put a value in the parameter db
     if message.data['cmd'].lower() == 'put':
@@ -289,14 +302,22 @@ def parameter_cb(_request_topic, message: b9py.Message):
 
 
 if __name__ == "__main__":
-    print("B9 Master")
+    print("B9 Broker")
 
     # Control-C handler
     signal.signal(signal.SIGINT, shutdown_handler)
 
-    # Init 'Master' B9 core
-    b9 = b9py.B9('MASTER')
+    ap = argparse.ArgumentParser()
+    ap.add_argument('-v', '--verbose', action='store_true', help='display debug messages')
+
+    args = vars(ap.parse_args())
+
+    # Init 'Broker' B9 core
+    b9 = b9py.B9('BROKER')
     b9.start_logger(level=logging.INFO)
+
+    if args['verbose']:
+        logging.info("'BROKER' is in Verbose mode.")
 
     # Databases
     dbPub = pickledb.load('pub_reg.db', auto_dump=False)
@@ -306,7 +327,7 @@ if __name__ == "__main__":
     dbNode = pickledb.load('node_reg.db', auto_dump=False)
 
     # Setup Topic Registration Service
-    reg_srv = b9.create_service('master/registration/topic', b9py.Message.MSGTYPE_TOPIC_REGISTRATION,
+    reg_srv = b9.create_service('broker/registration/topic', b9py.Message.MSGTYPE_TOPIC_REGISTRATION,
                                 topic_registration_cb, None, 5555)
     stat = reg_srv.advertise()
     if stat.is_successful:
@@ -315,7 +336,7 @@ if __name__ == "__main__":
         logging.error("Unable to start Topic Name Service. {}".format(stat.status_type))
 
     # Setup Parameter Service
-    param_srv = b9.create_service('master/parameter', b9py.Message.MSGTYPE_PARAMETER, parameter_cb, None, 5556)
+    param_srv = b9.create_service('broker/parameter', b9py.Message.MSGTYPE_PARAMETER, parameter_cb, None, 5556)
     stat = param_srv.advertise()
     if stat.is_successful:
         logging.info("Parameter Service on port 5556.")
@@ -323,7 +344,7 @@ if __name__ == "__main__":
         logging.error("Unable to start Parameter Service. {}".format(stat.status_type))
 
     # Setup Node Registration Service
-    node_srv = b9.create_service('master/registration/node', b9py.Message.MSGTYPE_NODE_REGISTRATION,
+    node_srv = b9.create_service('broker/registration/node', b9py.Message.MSGTYPE_NODE_REGISTRATION,
                                  node_registration_cb, None, 5557)
     stat = node_srv.advertise()
     if stat.is_successful:
@@ -331,12 +352,12 @@ if __name__ == "__main__":
     else:
         logging.error("Unable to start Node Service. {}".format(stat.status_type))
 
-    # Register the master node
-    master_entry = {'timestamp': time.time(),
+    # Register the broker node
+    broker_entry = {'timestamp': time.time(),
                     'nodename': b9.nodename,
                     'IP': b9.hostip,
                     'host': b9.hostname,
                     'pid': b9.pid}
-    dbNode.set(b9.nodename, master_entry)
+    dbNode.set(b9.nodename, broker_entry)
 
     b9.spin_forever()

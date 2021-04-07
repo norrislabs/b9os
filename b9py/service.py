@@ -7,11 +7,11 @@ import b9py
 
 
 class Service(object):
-    def __init__(self, node_name, master_uri, topic, message_type, callback, namespace, port,
+    def __init__(self, node_name, broker_uri, topic, message_type, callback, namespace, port,
                  this_host_ip, this_host_name):
         self._node_name = node_name
-        self._master_uri = master_uri
-        self._is_master = self._node_name.lower() == "master"
+        self._broker_uri = broker_uri
+        self._is_broker = self._node_name.lower() == "broker"
 
         self._message_type = message_type
         self._callback = callback
@@ -41,13 +41,13 @@ class Service(object):
         self._service_name = "SRV-{}-{}-{}".format(self._node_name, self._topic, self._port)
 
     def advertise(self):
-        # Register this service with the Master Topic Name Service
-        if self._master_uri is not None and not self._is_master:
+        # Register this service with the Broker Topic Name Service
+        if self._broker_uri is not None and not self._is_broker:
             result = b9py.ServiceClient.oneshot_service_call(self._node_name,
-                                                             'master/registration/topic',
+                                                             'broker/registration/topic',
                                                              None,
                                                              self._create_srv_reg_message(),
-                                                             5555, self._master_uri)
+                                                             5555, self._broker_uri)
             if not result.is_successful:
                 # Service call failed
                 logging.error("'{}' on node '{}' failed. {}".format(self._service_name, self._node_name,
@@ -58,12 +58,12 @@ class Service(object):
                 logging.info("'{}' advertised topic '{}' on node '{}'.".format(self._service_name, self._topic,
                                                                                self._node_name))
 
-        elif not self._is_master:
+        elif not self._is_broker:
             # No ability to advertise. Give up.
             err_msg = "'{}' on node '{}' failed. {}".format(self._service_name, self._node_name,
-                                                            b9py.B9Status.ERR_NOMASTER)
+                                                            b9py.B9Status.ERR_NOBROKER)
             logging.error(err_msg)
-            return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOMASTER, err_msg)
+            return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOBROKER, err_msg)
 
         # Activate service
         loop = asyncio.get_event_loop()
@@ -131,9 +131,9 @@ class Service(object):
 
 
 class ServiceClient(object):
-    def __init__(self, node_name, master_uri, topic, namespace, srv_port, srv_host):
+    def __init__(self, node_name, broker_uri, topic, namespace, srv_port, srv_host):
         self._node_name = node_name
-        self._master_uri = master_uri
+        self._broker_uri = broker_uri
 
         self._namespace = namespace
         if namespace:
@@ -169,19 +169,19 @@ class ServiceClient(object):
             self._srv_uri = "tcp://{}:{}".format(self._srv_host, self._srv_port)
         else:
             # Otherwise, lookup the service's URI using the topic
-            if self._master_uri is not None:
+            if self._broker_uri is not None:
                 result = b9py.ServiceClient.oneshot_service_call(self._node_name,
-                                                                 'master/registration/topic',
+                                                                 'broker/registration/topic',
                                                                  None,
                                                                  self._create_req_lookup_message(self._topic),
-                                                                 5555, self._master_uri)
+                                                                 5555, self._broker_uri)
                 if result.is_successful:
                     # Set the service's URI so we can connect
                     if result.result_data.data['found']:
                         self._srv_uri = "tcp://{}:{}".format(result.result_data.data['IP'],
                                                              result.result_data.data['port'])
                     else:
-                        # Unknown topic, not registered with master
+                        # Unknown topic, not registered with broker
                         err_msg = "'{}' on node '{}' failed. Topic '{}' {}".format(self._srv_client_name,
                                                                                    self._node_name,
                                                                                    self._topic,
@@ -198,9 +198,9 @@ class ServiceClient(object):
                 # No ability to subscribe. Give up.
                 err_msg = "'{}' on node '{}' failed. {}".format(self._srv_client_name,
                                                                 self._node_name,
-                                                                b9py.B9Status.ERR_NOMASTER)
+                                                                b9py.B9Status.ERR_NOBROKER)
                 logging.error(err_msg)
-                return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOMASTER, err_msg)
+                return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOBROKER, err_msg)
 
         self._req_sock.connect(self._srv_uri)
         return result
@@ -265,7 +265,7 @@ class ServiceClient(object):
             except asyncio.TimeoutError:
                 if retry < self._max_retry:
                     self.restart()
-                    print("Service call retry {}".format(retry + 1))
+                    print("Service call timeout retry {}".format(retry + 1))
                 else:
                     return b9py.B9Status.failed_status(b9py.B9Status.ERR_TIMEOUT)
 
@@ -287,8 +287,8 @@ class ServiceClient(object):
         return b9py.B9Status.success_status(response_msg)
 
     @staticmethod
-    def oneshot_service_call(nodename, topic, namespace, request, srv_port, srv_host=None):
-        client = b9py.ServiceClient(nodename, None, topic, namespace, srv_port, srv_host)
+    def oneshot_service_call(nodename, topic, namespace, request, srv_port, srv_host=None, broker_uri=None):
+        client = b9py.ServiceClient(nodename, broker_uri, topic, namespace, srv_port, srv_host)
         result = client.connect()
         if result.is_successful:
             sc_result = client.call_service(request)

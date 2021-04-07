@@ -12,9 +12,9 @@ pypathadd() {
     fi
 }
 
-master=${1-localhost}
-masterIP=$(python -c "import socket; print(socket.gethostbyname(\"${master}\"))")
-export B9_MASTER=$masterIP
+broker=${1-localhost}
+brokerIP=$(python -c "import socket; print(socket.gethostbyname(\"${broker}\"))")
+export B9_BROKER=$brokerIP
 
 if [ -d "$(pwd)"/b9os/b9cli ]
 then
@@ -37,8 +37,8 @@ fi
 export PATH
 export PYTHONPATH
 
-echo "Using master $master at $masterIP"
-echo $PATH
-echo $PYTHONPATH
+echo "Using broker $broker at $brokerIP"
+echo "$PATH"
+echo "$PYTHONPATH"
 
 cd b9ws || exit

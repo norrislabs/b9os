@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.7
+#!/usr/bin/env python3
 
 import os
 import sys
@@ -12,7 +12,7 @@ from colorama import Fore
 
 import b9py
 
-PYTHON_EXE = "python3.7"
+PYTHON_EXE = "python3"
 
 _running_nodes = []
 
@@ -116,7 +116,7 @@ def param(element: ET.Element):
         ns = None   # Must be global
 
     if check_attributes("param", ['name', 'value'], element.attrib):
-        param_srv = b9py.Parameter(master_uri, 'b9launch_cli', ns)
+        param_srv = b9py.Parameter(broker_uri, 'b9launch_cli', ns)
         r = param_srv.put(element.attrib['name'], element.attrib['value'])
         if not r.is_successful:
             print(Fore.RED + "Unable to set parameter {} to {}."
@@ -144,21 +144,21 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("file", default="", help="launch file name")
     ap.add_argument("-s", "--namespace", default="", help="topic namespace")
-    ap.add_argument("-m", "--master", action="store_true", help="start Master before launch.")
+    ap.add_argument("-b", "--broker", action="store_true", help="start Broker before launch.")
     args = vars(ap.parse_args())
 
-    if args['master']:
-        _run("b9master")
+    if args['broker']:
+        _run("b9broker")
         time.sleep(3)
 
-    # Get the master's address
-    master_uri = os.environ.get('B9_MASTER')
-    if master_uri is None:
-        master_uri = 'localhost'
-        print("B9 master URI was not specified. Using localhost.")
+    # Get the broker's address
+    broker_uri = os.environ.get('B9_BROKER')
+    if broker_uri is None:
+        broker_uri = 'localhost'
+        print("B9 broker URI was not specified. Using localhost.")
 
     # Init B9 core
-    b9 = b9py.B9('b9launch_cli', master_uri)
+    b9 = b9py.B9('b9launch_cli', broker_uri)
     b9.start_logger(level=logging.INFO)
     print()
 
