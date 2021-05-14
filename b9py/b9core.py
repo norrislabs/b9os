@@ -35,6 +35,7 @@ class B9(object):
         self._publishers = []
         self._subscribers = []
         self._have_all_publishers = False
+        self._muxes = []
 
         self._spin_delay = -1.0
         self._check_sub_count = 0
@@ -250,6 +251,14 @@ class B9(object):
         print(Fore.CYAN + "Subscriber '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
         print(Fore.RESET)
         return sub
+
+    def create_submux(self, topic, callback, mux_spec, namespace=None):
+        # node_name, broker_uri, topic, callback, mux_spec
+        mux = b9py.SubscriberMux(self, topic, callback, namespace, mux_spec)
+        self._muxes.append(mux)
+        print(Fore.CYAN + "Multiplexer '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
+        print(Fore.RESET)
+        return mux
 
     def create_service(self, topic, message_type, callback, namespace=None, port=None):
         # node_name, broker_uri, topic, message_type, callback, port, this_host_ip
