@@ -236,7 +236,8 @@ class B9(object):
                              topic, message_type, namespace,
                              rate, queue_size, self._host_ip, self._hostname)
         self._publishers.append(pub)
-        print(Fore.CYAN + "Publisher '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
+        print(Fore.CYAN + "Publisher in node '{}' for topic '{}' has been created.".format(self._nodename,
+                                                                                           topic), end='')
         print(Fore.RESET)
         return pub
 
@@ -248,7 +249,8 @@ class B9(object):
                               self._host_ip, self._hostname,
                               pub_port, pub_host,)
         self._subscribers.append(sub)
-        print(Fore.CYAN + "Subscriber '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
+        print(Fore.CYAN + "Subscriber in node '{}' for topic '{}' has been created.".format(self._nodename,
+                                                                                            topic), end='')
         print(Fore.RESET)
         return sub
 
@@ -256,7 +258,8 @@ class B9(object):
         # node_name, broker_uri, topic, callback, mux_spec
         mux = b9py.SubscriberMux(self, topic, callback, mux_spec, namespace)
         self._muxes.append(mux)
-        print(Fore.CYAN + "Multiplexer '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
+        print(Fore.CYAN + "Multiplexer in node '{}' for topic '{}' has been created.".format(self._nodename,
+                                                                                             topic), end='')
         print(Fore.RESET)
         return mux
 
@@ -265,7 +268,8 @@ class B9(object):
         srv = b9py.Service(self._nodename, self._broker_uri,
                            topic, message_type,
                            callback, namespace, port, self._host_ip, self._hostname)
-        print(Fore.CYAN + "Service '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
+        print(Fore.CYAN + "Service in node '{}' for topic '{}' has been created.".format(self._nodename,
+                                                                                         topic), end='')
         print(Fore.RESET)
         return srv
 
