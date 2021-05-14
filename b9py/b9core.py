@@ -254,7 +254,7 @@ class B9(object):
 
     def create_submux(self, topic, callback, mux_spec, namespace=None):
         # node_name, broker_uri, topic, callback, mux_spec
-        mux = b9py.SubscriberMux(self, topic, callback, namespace, mux_spec)
+        mux = b9py.SubscriberMux(self, topic, callback, mux_spec, namespace)
         self._muxes.append(mux)
         print(Fore.CYAN + "Multiplexer '{}' for topic '{}' has been created.".format(self._nodename, topic), end='')
         print(Fore.RESET)

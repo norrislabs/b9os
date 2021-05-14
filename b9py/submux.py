@@ -1,5 +1,30 @@
-import asyncio
+import logging
+from threading import Timer
 import b9py
+
+
+class BlockTimer(object):
+    def __init__(self, release_fn):
+        self.thread = None
+        self._running = False
+        self._all_done = release_fn
+
+    def all_done(self):
+        self._running = False
+        self._all_done()
+
+    def start(self, interval):
+        if self._running:
+            self.cancel()
+
+        self.thread = Timer(interval, self.all_done)
+        self.thread.start()
+        self._running = True
+
+    def cancel(self):
+        if self._running:
+            self.thread.cancel()
+            self._running = False
 
 
 class SubscriberMux(object):
@@ -10,29 +35,32 @@ class SubscriberMux(object):
         self._subscribers = []
 
         self._namespace = namespace
-        if namespace:
-            if namespace == '/':
-                self._topic = self._namespace + topic.strip('/')
-            else:
-                self._namespace = namespace.strip('/')
-                self._topic = '/' + self._namespace + '/' + topic.strip('/')
-        else:
-            self._topic = topic
+        self._topic = topic
 
         self._current_priority = len(mux_spec)
 
+        self._blocker = BlockTimer(self.release_block)
+
+    def release_block(self):
+        self._current_priority = len(self._mux_spec)
+        logging.debug("Timeout")
+
     def _callback_wrapper(self, priority, blocking_time):
         def priority_callback(topic, msg: b9py.Message):
-            if priority <= self._current_priority:
+            if priority == self._current_priority:
+                self._callback(topic, msg)
+                self._blocker.start(blocking_time)
+                logging.debug("Refresh : {}".format(topic))
+
+            elif priority < self._current_priority:
                 self._current_priority = priority
                 self._callback(topic, msg)
+                self._blocker.start(blocking_time)
+                logging.debug("Priority: {}".format(topic))
 
-                for t in range(int(blocking_time / 0.1)):
-                    await asyncio.sleep(0.1)
-                    if self._current_priority < priority:
-                        return
+            else:
+                logging.debug("Blocked : {}".format(topic))
 
-                self._current_priority = len(self._mux_spec)
         return priority_callback
 
     def subscribe(self):
@@ -51,6 +79,10 @@ class SubscriberMux(object):
     @property
     def namespace(self):
         return self._namespace
+
+    @property
+    def mux_spec(self):
+        return self._mux_spec
 
     @property
     def subscribers(self):
