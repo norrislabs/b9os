@@ -55,7 +55,7 @@ class SubscriberMux(object):
 
     def _release_block(self):
         self._current_priority = len(self._mux_spec)
-        logging.debug("Timeout")
+        logging.debug("Release")
 
     def _callback_wrapper(self, priority, blocking_time):
         def priority_callback(topic, msg: b9py.Message):

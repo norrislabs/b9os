@@ -28,7 +28,7 @@ if __name__ == "__main__":
     b9 = b9py.B9(args['nodename'])
     b9.start_logger(level=logging.DEBUG)
 
-    mux_spec = [(10, 2, -1, args['topic']), (10, 2, -1, None), (2, 2, -1, None)]
+    mux_spec = [(10, 2, -1, None), (10, 2, -1, None), (2, 2, -1, None)]
     mux = b9.create_submux(args['topic'], sub_callback, mux_spec, args['namespace'])
 
     b9.spin_forever()
