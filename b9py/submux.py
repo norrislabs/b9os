@@ -27,14 +27,14 @@ class BlockTimer(object):
             self._running = False
 
 
-class SubscriberMux(object):
-    def __init__(self, b9core: b9py.B9, topic, callback, mux_spec, namespace):
+# This is the thing that makes complex emergent behavior possible
+class SubscriberMultiplexer(object):
+    def __init__(self, b9core: b9py.B9, topic, namespace, callback, mux_spec):
         self._b9 = b9core
+        self._topic = topic
+        self._namespace = namespace
         self._callback = callback
         self._mux_spec = mux_spec
-
-        self._namespace = namespace
-        self._topic = topic
 
         self._subscribers = []
         self._blocker = BlockTimer(self._release_block)
@@ -75,6 +75,7 @@ class SubscriberMux(object):
             # Lower priority
             else:
                 logging.debug("Blocked : {}".format(topic))
+
         return priority_callback
 
     @property

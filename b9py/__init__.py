@@ -2,7 +2,7 @@
 # website:	http://www.norrislabs.com
 
 # set the version number
-__version__ = "0.0.24"
+__version__ = "0.0.25"
 
 from .b9core import B9
 from .b9core import B9Status
@@ -13,7 +13,7 @@ from .message import MessageFactory
 from .pubsub import Publisher
 from .pubsub import Subscriber
 
-from .submux import SubscriberMux
+from .submux import SubscriberMultiplexer
 
 from .service import Service
 from .service import ServiceClient
