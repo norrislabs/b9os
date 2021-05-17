@@ -6,25 +6,16 @@ import b9py
 class BlockTimer(object):
     def __init__(self, release_fn):
         self.thread = None
-        self._running = False
         self._all_done = release_fn
 
-    def all_done(self):
-        self._running = False
-        self._all_done()
-
     def start(self, interval):
-        if self._running:
-            self.cancel()
-
-        self.thread = Timer(interval, self.all_done)
+        self.thread = Timer(interval, self._all_done)
         self.thread.start()
-        self._running = True
 
     def cancel(self):
-        if self._running:
+        if self.thread:
             self.thread.cancel()
-            self._running = False
+        self._all_done()
 
 
 # This is the thing that makes complex emergent behavior possible
@@ -61,16 +52,22 @@ class SubscriberMultiplexer(object):
         def priority_callback(topic, msg: b9py.Message):
             # Same priority
             if priority == self._current_priority:
-                self._callback(topic, msg)
-                self._blocker.start(blocking_time)
-                logging.debug("Refresh : {}".format(topic))
+                if not self._callback(topic, msg):
+                    self._blocker.start(blocking_time)
+                    logging.debug("Refresh : {}".format(topic))
+                else:
+                    self._blocker.cancel()
+                    logging.debug("Canceled: {}".format(topic))
 
             # Higher priority
             elif priority < self._current_priority:
                 self._current_priority = priority
-                self._callback(topic, msg)
-                self._blocker.start(blocking_time)
-                logging.debug("Priority: {}".format(topic))
+                if not self._callback(topic, msg):
+                    self._blocker.start(blocking_time)
+                    logging.debug("Priority: {}".format(topic))
+                else:
+                    self._blocker.cancel()
+                    logging.debug("Canceled: {}".format(topic))
 
             # Lower priority
             else:

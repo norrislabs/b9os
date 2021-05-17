@@ -14,6 +14,8 @@ def shutdown_handler(_sig, _frame):
 
 def sub_callback(topic, msg: b9py.Message):
     logging.info("{} = {}".format(topic, msg.data))
+    if topic.endswith('1'):
+        return True
 
 
 if __name__ == "__main__":
