@@ -3,7 +3,7 @@ from threading import Timer
 import b9py
 
 
-class BlockTimer(object):
+class LockoutTimer(object):
     def __init__(self, release_fn):
         self.thread = None
         self._all_done = release_fn
@@ -18,7 +18,7 @@ class BlockTimer(object):
         self._all_done()
 
 
-# This is the thing that makes complex emergent behavior possible
+# This is the thing that makes emergent behavior possible
 class SubscriberMultiplexer(object):
     def __init__(self, b9core: b9py.B9, topic, namespace, callback, mux_spec):
         self._b9 = b9core
@@ -28,7 +28,7 @@ class SubscriberMultiplexer(object):
         self._mux_spec = mux_spec
 
         self._subscribers = []
-        self._blocker = BlockTimer(self._release_block)
+        self._locker = LockoutTimer(self._release_block)
 
         self._current_priority = len(mux_spec)
 
@@ -38,40 +38,32 @@ class SubscriberMultiplexer(object):
 
             if sub_topic is None:
                 sub_topic = "{}/{}".format(self._topic, str(priority))
-            cb = self._callback_wrapper(priority, blocking_time)
-            sub = self._b9.create_subscriber(sub_topic, cb, self._namespace,
+            cbc = self._callback_closure(priority, blocking_time)
+            sub = self._b9.create_subscriber(sub_topic, cbc, self._namespace,
                                              queue_size=queue_size,
                                              rate=rate)
             self._subscribers.append(sub)
 
     def _release_block(self):
         self._current_priority = len(self._mux_spec)
-        logging.debug("Release")
+        logging.debug("Lockout ended.")
 
-    def _callback_wrapper(self, priority, blocking_time):
+    def _callback_closure(self, priority, blocking_time):
         def priority_callback(topic, msg: b9py.Message):
-            # Same priority
-            if priority == self._current_priority:
-                if not self._callback(topic, msg):
-                    self._blocker.start(blocking_time)
-                    logging.debug("Refresh : {}".format(topic))
-                else:
-                    self._blocker.cancel()
-                    logging.debug("Canceled: {}".format(topic))
-
-            # Higher priority
-            elif priority < self._current_priority:
+            # Same or higher priority
+            if priority <= self._current_priority:
                 self._current_priority = priority
-                if not self._callback(topic, msg):
-                    self._blocker.start(blocking_time)
-                    logging.debug("Priority: {}".format(topic))
+                if not self._callback(topic, msg, priority):
+                    if blocking_time >= 0.0:
+                        self._locker.start(blocking_time)
+                    logging.debug("Lockout started {}".format(blocking_time))
                 else:
-                    self._blocker.cancel()
-                    logging.debug("Canceled: {}".format(topic))
+                    self._locker.cancel()
+                    logging.debug("Lockout canceled.")
 
             # Lower priority
             else:
-                logging.debug("Blocked : {}".format(topic))
+                logging.debug("Lockout enforced for {}".format(topic))
 
         return priority_callback
 
