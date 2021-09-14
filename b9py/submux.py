@@ -37,9 +37,11 @@ class SubscriberMultiplexer(object):
             blocking_time, queue_size, rate, sub_topic = self._mux_spec[priority]
 
             if sub_topic is None:
-                sub_topic = "{}/{}".format(self._topic, str(priority))
+                new_topic = "{}/{}".format(self._topic, str(priority))
+            else:
+                new_topic = "{}/{}".format(self._topic, sub_topic)
             cbc = self._callback_closure(priority, blocking_time)
-            sub = self._b9.create_subscriber(sub_topic, cbc, self._namespace,
+            sub = self._b9.create_subscriber(new_topic, cbc, self._namespace,
                                              queue_size=queue_size,
                                              rate=rate)
             self._subscribers.append(sub)
