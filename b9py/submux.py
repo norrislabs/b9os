@@ -20,7 +20,7 @@ class LockoutTimer(object):
 
 # This is the thing that makes emergent behavior possible
 class SubscriberMultiplexer(object):
-    def __init__(self, b9core: b9py.B9, topic, namespace, callback, mux_spec):
+    def __init__(self, b9core: b9py.B9, topic, namespace, callback, mux_spec, synchro_pub):
         self._b9 = b9core
         self._topic = topic
         self._namespace = namespace
@@ -31,6 +31,14 @@ class SubscriberMultiplexer(object):
         self._locker = LockoutTimer(self._release_block)
 
         self._current_priority = len(mux_spec)
+
+        # Synchronization publisher
+        self._synchro_pub = None
+        if synchro_pub:
+            self._synchro_pub = self._b9.create_publisher(topic + "/sync", b9py.Message.MSGTYPE_LIST, namespace)
+            stat = self._synchro_pub.advertise()
+            if not stat.is_successful:
+                print("Synchro publisher failed to advertise.")
 
         # Build out all the subscribers and their callbacks
         for priority in range(len(self._mux_spec)):
@@ -55,16 +63,24 @@ class SubscriberMultiplexer(object):
             # Same or higher priority
             if priority <= self._current_priority:
                 self._current_priority = priority
+
+                # Make the subscription callback
                 if not self._callback(topic, msg, priority):
                     if blocking_time >= 0.0:
                         self._locker.start(blocking_time)
-                    logging.debug("Lockout started {}".format(blocking_time))
+                        logging.debug("Lockout started {}".format(blocking_time))
                 else:
                     self._locker.cancel()
                     logging.debug("Lockout canceled.")
 
+                # Publish synchronization message
+                if self._synchro_pub:
+                    sync_msg = b9py.MessageFactory.create_message_list([priority, msg.data])
+                    self._synchro_pub.publish(sync_msg)
+
             # Lower priority
             else:
+                # Sorry, no callback for you! Your message will be ignored
                 logging.debug("Lockout enforced for {}".format(topic))
 
         return priority_callback
@@ -84,3 +100,7 @@ class SubscriberMultiplexer(object):
     @property
     def subscribers(self):
         return self._subscribers
+
+    @property
+    def has_synchronization_publisher(self):
+        return self._synchro_pub is not None

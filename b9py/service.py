@@ -287,7 +287,7 @@ class ServiceClient(object):
         return b9py.B9Status.success_status(response_msg)
 
     @staticmethod
-    def oneshot_service_call(nodename, topic, namespace, request, srv_port, srv_host=None, broker_uri=None):
+    def oneshot_service_call(nodename, topic, namespace, request, srv_port=5557, srv_host=None, broker_uri=None):
         client = b9py.ServiceClient(nodename, broker_uri, topic, namespace, srv_port, srv_host)
         result = client.connect()
         if result.is_successful:

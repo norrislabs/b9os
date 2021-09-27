@@ -98,7 +98,7 @@ def deploy_os():
         # Copy the command line tools
         for exe in executables:
             exe_path = b9_cli_dir + "/" + exe
-            replace_shebang(exe_path, temporary_deploy_file, args['shebang'])
+            replace_shebang(exe_path, temporary_deploy_file, shebang)
             sftp.put(temporary_deploy_file, exe_path, preserve_mtime=True)
             sftp.chmod(exe_path, 744)
 
@@ -141,7 +141,7 @@ def deploy_multi_node(element):
                 sftp.mkdir(dest_node, mode=744)
 
             # Copy standard program used by all multi-nodes
-            replace_shebang(std_multi_node_exe, temporary_deploy_file, args['shebang'])
+            replace_shebang(std_multi_node_exe, temporary_deploy_file, shebang)
             sftp.put(temporary_deploy_file, dest_node + "/cortex.py", preserve_mtime=True)
 
             # Location of source multi node processors/models/configurations
@@ -238,7 +238,7 @@ if __name__ == "__main__":
     ap.add_argument("-u", "--user", type=str, default=None, help="remote user name")
     ap.add_argument("-r", "--root", type=str, default=None, help="remote root directory")
 
-    ap.add_argument("-b", "--shebang", type=str, default="python3", help="Executable shebang")
+    ap.add_argument("-b", "--shebang", type=str, default=None, help="Python executable shebang")
 
     args = vars(ap.parse_args())
 
@@ -290,6 +290,14 @@ if __name__ == "__main__":
         print(Fore.RED + "Host and/or user name was not provided in the deploy file or on the command line.", end='')
         print(Fore.RESET)
         os.kill(os.getpid(), signal.SIGKILL)
+
+    # Shebang
+    if args["shebang"] is not None:
+        shebang = args['shebang']
+    elif "shebang" in root.attrib.keys():
+        shebang = root.attrib['shebang']
+    else:
+        shebang = "python3"
 
     # Password
     if "password" in root.attrib.keys():
