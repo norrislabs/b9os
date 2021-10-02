@@ -106,12 +106,18 @@ def echo_text_cb(_topic, message: b9py.Message):
 
 
 def echo_image_cb(_topic, message: b9py.Message):
+    global _running
+
     buff = np.frombuffer(message.data, np.uint8)
     img = cv2.imdecode(buff, cv2.IMREAD_COLOR)
 
     with image_lock:
         cv2.imshow(args['topic'], img)
-        cv2.waitKey(1)
+        key = cv2.waitKey(1)
+        if key == 27:
+            _running = False
+            print('\nCanceled by user.', end="\r\n")
+            os.kill(os.getpid(), signal.SIGKILL)
 
 
 def hz_cb(_topic, _message):
@@ -137,15 +143,15 @@ def print_registrations(regtype, items):
     else:
         title = '------ Subscribers '
 
-    print('{}{}'.format(title, '-' * (130 - len(title))))
-    fmt = "{:35}{:16}{:16}{:8}{:30}{}"
+    print('{}{}'.format(title, '-' * (135 - len(title))))
+    fmt = "{:38}{:16}{:16}{:8}{:32}{}"
     print(fmt.format('Topic',
                      'Message_Type',
                      'IP',
                      'Port',
                      'Node_Name',
                      'Node_Host'), end="\r\n")
-    print('-' * 130)
+    print('-' * 135)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
