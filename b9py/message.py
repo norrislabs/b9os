@@ -3,6 +3,7 @@ import msgpack
 
 
 class Message(object):
+    # Generic message types
     MSGTYPE_ANY = None
     MSGTYPE_NULL = 'Null'
     MSGTYPE_STRING = 'String'
@@ -12,15 +13,18 @@ class Message(object):
     MSGTYPE_LIST = 'List'
     MSGTYPE_DICT = 'Dict'
 
+    # Specialized message types
     MSGTYPE_DETECTION = 'Detection'
     MSGTYPE_VECTOR3 = 'Vector3'
     MSGTYPE_TWIST = 'Twist'
     MSGTYPE_IMAGE = 'Image'
     MSGTYPE_POINTCLOUD = 'PointCloud'
     MSGTYPE_OBSTACLEMAP = 'ObstacleMap'
+    MSGTYPE_SUBMUX_SYNC = "SubMuxSync"
 
     MSGTYPE_ERROR = 'Error'
 
+    # Broker messages
     MSGTYPE_TOPIC_REGISTRATION = 'TopicRegistration'
     MSGTYPE_NODE_REGISTRATION = 'NodeRegistration'
     MSGTYPE_PARAMETER = 'Parameter'
@@ -128,6 +132,12 @@ class MessageFactory(object):
     def create_message_detection(data, source=None):
         assert (isinstance(data, dict))
         return Message(Message.MSGTYPE_DETECTION, data, source)
+
+    @staticmethod
+    def create_message_submux_sync(msg_data, priority_number, priority_name='', source=None):
+        return Message(Message.MSGTYPE_SUBMUX_SYNC, {'priority_number': priority_number,
+                                                     'priority_name:': priority_name,
+                                                     'message_data': msg_data}, source)
 
     @staticmethod
     def create_message_vector3(x, y, z, source=None):

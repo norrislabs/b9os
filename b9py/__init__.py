@@ -2,7 +2,7 @@
 # website:	http://www.norrislabs.com
 
 # set the version number
-__version__ = "0.0.28"
+__version__ = "0.0.30"
 
 from .b9core import B9
 from .b9core import B9Status

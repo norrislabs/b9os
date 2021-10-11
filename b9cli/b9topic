@@ -144,7 +144,7 @@ def print_registrations(regtype, items):
         title = '------ Subscribers '
 
     print('{}{}'.format(title, '-' * (135 - len(title))))
-    fmt = "{:38}{:16}{:16}{:8}{:32}{}"
+    fmt = "{:42}{:16}{:16}{:8}{:34}{}"
     print(fmt.format('Topic',
                      'Message_Type',
                      'IP',
