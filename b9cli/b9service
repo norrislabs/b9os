@@ -26,15 +26,15 @@ def yaml_load(dinput):
 
 def print_registrations(items):
     title = '------ Services '
-    print('{}{}'.format(title, '-' * (130 - len(title))))
-    fmt = "{:35}{:16}{:16}{:8}{:30}{}"
+    print('{}{}'.format(title, '-' * (134 - len(title))))
+    fmt = "{:40}{:16}{:16}{:8}{:30}{}"
     print(fmt.format('Topic',
                      'Message_Type',
                      'IP',
                      'Port',
                      'Node_Name',
                      'Node_Host'), end="\r\n")
-    print('-' * 130)
+    print('-' * 134)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
@@ -134,7 +134,12 @@ if __name__ == "__main__":
                 result = caller.call_service(msg)
                 if result.is_successful:
                     if not args['silent']:
-                        print("Result: {}".format(result.result_data), end="\r\n")
+                        result_str = "timestamp: {}, seq: {}, message type: {},\r\n        data: {}".format(
+                            result.result_data.timestamp,
+                            result.result_data.sequence,
+                            result.result_data.message_type,
+                            result.result_data.data)
+                        print("Result: {}".format(result_str), end="\r\n")
                     if args['interval'] > 0:
                         time.sleep(args['interval'])
                     else:

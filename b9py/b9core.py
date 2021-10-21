@@ -6,6 +6,7 @@ import socket
 import asyncio
 import logging
 from colorama import Fore
+from netifaces import interfaces, ifaddresses, AF_INET
 
 import b9py
 import b9py.message
@@ -20,10 +21,7 @@ class B9(object):
         self._init_success = True
         self._init_status = "'{}' is initialized and registered.".format(self._nodename)
 
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        self._host_ip = s.getsockname()[0]
-        self._hostname = socket.gethostname()
+        self._host_ip, self._hostname = self._get_ip_hostname()
         self._pid = os.getpid()
 
         # Setup signal handlers
@@ -64,6 +62,19 @@ class B9(object):
                     self._init_success = False
                     self._init_status = "Node registration '{}' failed. {}".format(self._nodename,
                                                                                    result.status_type)
+
+    @staticmethod
+    def _get_ip_hostname():
+        ip_list = []
+        # Get all the IPs of this machine
+        for ifaceName in interfaces():
+            addresses = [i['addr'] for i in ifaddresses(ifaceName).setdefault(AF_INET, [{'addr': '0.0.0.0'}])]
+            ip_list.append(' '.join(addresses))
+
+        # Find the max network id (>= 192.168.48) in list of IPs. Assume it is the robot's network id
+        net_ids = list(map(lambda ip: int(ip.split('.')[2]), ip_list))
+        max_index = net_ids.index(max(net_ids))
+        return ip_list[max_index], socket.gethostname()
 
     def _create_node_reg_message(self):
         return b9py.Message(b9py.Message.MSGTYPE_NODE_REGISTRATION, {'cmd': 'REGISTER',

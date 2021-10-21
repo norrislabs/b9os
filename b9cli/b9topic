@@ -143,7 +143,7 @@ def print_registrations(regtype, items):
     else:
         title = '------ Subscribers '
 
-    print('{}{}'.format(title, '-' * (135 - len(title))))
+    print('{}{}'.format(title, '-' * (140 - len(title))))
     fmt = "{:42}{:16}{:16}{:8}{:34}{}"
     print(fmt.format('Topic',
                      'Message_Type',
@@ -151,7 +151,7 @@ def print_registrations(regtype, items):
                      'Port',
                      'Node_Name',
                      'Node_Host'), end="\r\n")
-    print('-' * 135)
+    print('-' * 140)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:

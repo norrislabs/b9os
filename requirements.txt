@@ -8,9 +8,12 @@ Flask
 pysftp
 colorama~=0.4.3
 pillow
-matplotlib
+matplotlib~=3.4.1
 fire~=0.4.0
 psutil
 pyserial
 opencv-contrib-python
 
+
+netifaces~=0.11.0
+opencv-python~=4.2.0.34
