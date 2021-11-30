@@ -21,7 +21,7 @@ class B9(object):
         self._init_success = True
         self._init_status = "'{}' is initialized and registered.".format(self._nodename)
 
-        self._host_ip, self._hostname = self._get_ip_hostname()
+        self._host_ip, self._hostname = self.get_ip_hostname()
         self._pid = os.getpid()
 
         # Setup signal handlers
@@ -64,7 +64,7 @@ class B9(object):
                                                                                    result.status_type)
 
     @staticmethod
-    def _get_ip_hostname():
+    def get_ip_hostname():
         ip_list = []
         # Get all the IPs of this machine
         for ifaceName in interfaces():

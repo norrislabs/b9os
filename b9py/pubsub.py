@@ -3,8 +3,12 @@ import uuid
 import asyncio
 import zmq.asyncio
 import logging
+import os
+from colorama import Fore
 
 import b9py
+
+PUB_RECORDING_DIR = "recordings"
 
 
 class Publisher(object):
@@ -43,6 +47,14 @@ class Publisher(object):
 
         # Outgoing message queue
         self._queue = asyncio.Queue(maxsize=queue_size)
+
+        # Recording
+        self._is_recording = False
+        self._recording_path = None
+        self._recording_file = None
+        self._recording_srv = None
+        self._record_count = 0
+        self._host_ip, self._hostname = b9py.B9.get_ip_hostname()
 
     def advertise(self):
         # Register this topic publisher with the Broker Topic Name Service
@@ -97,9 +109,93 @@ class Publisher(object):
         loop.run_until_complete(self._sleep(2))
 
         # Log and return success
-        logging.info("'{}' advertised topic '{}' on node '{}'.".format(self._pub_name, self._topic,
+        logging.info("'{}' advertised topic '{}' on node '{}'.".format(self._pub_name,
+                                                                       self._topic,
                                                                        self._node_name))
         return b9py.B9Status.success_status()
+
+    def _rec_srv_cb(self, _topic, message):
+        cmd = ''
+        if isinstance(message.data, str):
+            cmd = message.data.lower()
+        elif isinstance(message.data, list) and len(message.data) == 1:
+            if isinstance(message.data[0], str):
+                cmd = message.data[0].lower()
+
+        if cmd == "start":
+            self.record_start()
+        elif cmd == "restart":
+            self.record_stop()
+            self.record_start()
+        elif cmd == "pause":
+            self.record_pause()
+        elif cmd == "stop":
+            self.record_stop()
+        else:
+            return b9py.MessageFactory.create_message_bool(False)
+
+        return b9py.MessageFactory.create_message_bool(True)
+
+    def record_setup_service(self, service_topic=None, namespace=None):
+        if service_topic is None:
+            stopic = self._topic + "/recorder"
+        else:
+            stopic = service_topic
+        self._recording_srv = b9py.Service(self._node_name, self._broker_uri,
+                                           stopic, b9py.Message.MSGTYPE_ANY,
+                                           self._rec_srv_cb, namespace, None,
+                                           self._host_ip, self._hostname)
+        stat = self._recording_srv.advertise()
+        if not stat.is_successful:
+            logging.error("Service '{}' failed to advertise.".format(stopic))
+            return False
+        else:
+            print(Fore.CYAN + "Record service '{}' for topic '{}' has been created.".format(self._node_name,
+                                                                                            stopic), end='')
+            print(Fore.RESET)
+            return True
+
+    def record_start(self):
+        if self._recording_file is None:
+            # No file so create a new one
+            try:
+                if not os.path.isdir(PUB_RECORDING_DIR):
+                    os.mkdir(PUB_RECORDING_DIR)
+
+                recording_filename = "{}-{}-{}.bag".format(self._node_name.replace("-", "_"),
+                                                           self._topic[1:].replace("/", "_"),
+                                                           time.strftime("%Y%m%d_%H%M%S"))
+                self._recording_path = os.path.join(PUB_RECORDING_DIR, recording_filename)
+                self._recording_file = open(self._recording_path, "wb")
+                self._is_recording = True
+
+            except OSError as ex:
+                logging.error("Error '{}' while opening recording file '{}'.".format(ex, self._recording_path))
+                self._recording_path = None
+                self._recording_file = None
+                self._is_recording = False
+                self._record_count = 0
+        else:
+            self._is_recording = True
+
+        if self._is_recording:
+            logging.info("Recorder for '{}' has started --> '{}'.".format(self._topic, self._recording_path))
+        return self._is_recording
+
+    def record_pause(self):
+        if self._recording_file is not None:
+            self._is_recording = False
+            logging.info("Recorder for '{}' has been paused.".format(self._topic))
+
+    def record_stop(self):
+        if self._recording_file:
+            self._recording_file.close()
+            self._recording_file = None
+            self._recording_path = None
+            self._is_recording = False
+            logging.info("Recorder for '{}' has stopped. {} messages recorded.".format(self._topic,
+                                                                                       self._record_count))
+            self._record_count = 0
 
     @staticmethod
     async def _sleep(delay):
@@ -143,6 +239,12 @@ class Publisher(object):
     def empty(self):
         return self._queue.empty()
 
+    def recording_path(self):
+        return self._recording_path
+
+    def is_recording(self):
+        return self._is_recording
+
     def publish(self, message):
         if self._message_type is None or message.message_type == self._message_type:
             try:
@@ -183,7 +285,7 @@ class Publisher(object):
                 if self._queue.qsize() == 0:
                     return
         except asyncio.CancelledError:
-            logging.debug("'" + self._pub_name + "' publish_wait task of has been canceled.")
+            logging.debug("'" + self._pub_name + "' publish_wait task has been canceled.")
 
     async def _pub_task(self):
         # Give time for subscribers to initialize
@@ -203,7 +305,15 @@ class Publisher(object):
                     msg_q.timestamp = time.time()
                     if msg_q.source is None or len(msg_q.source.strip()) == 0:
                         msg_q.source = self._node_name
-                    self._pub_sock.send_multipart([self._topic.encode('utf-8'), msg_q.pack()], zmq.DONTWAIT)
+
+                    msg_b = msg_q.pack()
+                    self._pub_sock.send_multipart([self._topic.encode('utf-8'), msg_b], zmq.DONTWAIT)
+                    if self._is_recording:
+                        self._recording_file.write(msg_b)
+                        self._record_count += 1
+                        if self._record_count % 1000 == 0:
+                            logging.info("Recorder for '{}' has {} messages.".format(self._topic,
+                                                                                     self._record_count))
 
         except asyncio.CancelledError:
             logging.debug("'" + self._pub_name + "' publish task of has been canceled.")
@@ -407,25 +517,18 @@ class Subscriber(object):
             # Keep listening for published messages on topic
             while True:
                 [topic, msg_data] = await self._sub_sock.recv_multipart()
-                msg_unpacked = b9py.Message.unpack(msg_data)
 
                 if topic.decode("utf-8") != self._topic:
                     logging.error("Topic mismatch! {} != {}".format(topic.decode('utf-8'), self._topic))
                     continue
-
-                if self._message_type is not None and msg_unpacked.message_type != self._message_type:
-                    logging.error("Message type mismatch! {} != {}".format(msg_unpacked.message_type,
-                                                                           self._message_type))
-                    continue
                 else:
                     try:
-                        self._queue.put_nowait(msg_unpacked)
-
+                        self._queue.put_nowait(msg_data)
                     except asyncio.QueueFull:
                         # Queue is full
                         # Pop one off and put the new message on
                         self._queue.get_nowait()
-                        self._queue.put_nowait(msg_unpacked)
+                        self._queue.put_nowait(msg_data)
 
                         err_msg = "'{}' on '{}' failed. First in queue lost. {}".format(self._sub_name,
                                                                                         self._node_name,
@@ -451,7 +554,14 @@ class Subscriber(object):
                 # Callback with any new messages
                 if self._queue.qsize() > 0:
                     msg_q = await self._queue.get()
-                    self._callback(self._topic, msg_q)
+                    msg_unpacked = b9py.Message.unpack(msg_q)
+
+                    if self._message_type is not None and msg_unpacked.message_type != self._message_type:
+                        logging.error("Message type mismatch! {} != {}".format(msg_unpacked.message_type,
+                                                                               self._message_type))
+                    else:
+                        # Call callback function with unpacked message
+                        self._callback(self._topic, msg_unpacked)
 
         except asyncio.CancelledError:
             logging.debug("'" + self._sub_name + "' message task has been canceled.")

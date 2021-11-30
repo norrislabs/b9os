@@ -17,7 +17,7 @@ B9OS_PY_DIR = "b9py"
 B9OS_CLI_DIR = "b9cli"
 WORKSPACE_DIR = "b9ws"
 
-executables = ['b9broker', 'b9service', 'b9topic', 'b9parameter', 'b9node', 'b9run', 'b9launch']
+executables = ['b9broker', 'b9service', 'b9topic', 'b9parameter', 'b9node', 'b9run', 'b9launch', 'b9bag']
 
 std_multi_node_exe = "b9ws_generic/cortex/cortex.py"
 

@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+
+import signal
+import argparse
+import msgpack
+import datetime
+
+
+def sigint_handler(_signum, _frame):
+    print('\nCtrl-C shutdown.')
+
+
+def load_bag(bag_file):
+    msgs = []
+    with open(bag_file, "rb") as bag_fn:
+        unp = msgpack.Unpacker(bag_fn, raw=False)
+        for mg in unp:
+            msgs.append(mg)
+    return msgs
+
+
+def print_msg(message):
+    header = message['header']
+    time = datetime.datetime.fromtimestamp(header['timestamp'])
+    print("{:30}seq: {:8}type: {:8}src: {:28}data: {}".format(str(time),
+                                                              str(header['seq']),
+                                                              header['message_type'],
+                                                              header['source'],
+                                                              str(message['data'])), end="\r\n")
+
+
+if __name__ == "__main__":
+    print("\nB9 Bag Tool")
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    ap = argparse.ArgumentParser()
+    subparsers = ap.add_subparsers(dest='command')
+    subparsers.required = True
+
+    #  subparser for dump
+    parser_dump = subparsers.add_parser('dump')
+    parser_dump.add_argument("file", help="bag file name")
+
+    #  subparser for merge
+    parser_merge = subparsers.add_parser('merge')
+    parser_merge.add_argument('files2merge', nargs='+', help='list of bag files to merge')
+    parser_merge.add_argument("-o", "--output", help="merged bag output file name", required=True)
+
+    args = vars(ap.parse_args())
+
+    # Dump recording file to screen
+    if args['command'].lower() == 'dump':
+        loaded_msgs = load_bag(args['file'])
+        for m in loaded_msgs:
+            print_msg(m)
+        print("Bag contains {} messages.".format(len(loaded_msgs)), end="\r\n")
+
+    elif args['command'].lower() == 'merge':
+        # Load and merge files
+        merged = []
+        for fn in args['files2merge']:
+            merged += load_bag(fn)
+        sorted_msgs = sorted(merged, key=lambda i: (i['header']['timestamp']), reverse=False)
+
+        # Write out merged bag file
+        output_file = open(args['output'], "wb")
+        for msg in merged:
+            msg_b = msgpack.packb(msg, use_bin_type=True)
+            output_file.write(msg_b)
+        output_file.close()
+        print("Merged bag with {} messages was written to '{}'".format(len(merged),
+                                                                       args['output']), end="\r\n")
+
+    print(end="\r\n")

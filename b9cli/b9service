@@ -26,15 +26,15 @@ def yaml_load(dinput):
 
 def print_registrations(items):
     title = '------ Services '
-    print('{}{}'.format(title, '-' * (134 - len(title))))
-    fmt = "{:40}{:16}{:16}{:8}{:30}{}"
+    print('{}{}'.format(title, '-' * (140 - len(title))))
+    fmt = "{:45}{:16}{:16}{:8}{:30}{}"
     print(fmt.format('Topic',
                      'Message_Type',
                      'IP',
                      'Port',
                      'Node_Name',
                      'Node_Host'), end="\r\n")
-    print('-' * 134)
+    print('-' * 140)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
@@ -68,12 +68,12 @@ if __name__ == "__main__":
     parser_list = subparsers.add_parser('list')
 
     #  subparser for call
-    parser_pub = subparsers.add_parser('call')
-    parser_pub.add_argument("topic", help="publish to this topic.")
-    parser_pub.add_argument("type", help="message type.")
-    parser_pub.add_argument("data", help="message data.", type=yaml_load)
-    parser_pub.add_argument('-i', '--interval', type=float, default=-1, help='repeat inverval in seconds.')
-    parser_pub.add_argument("-s", "--silent", action="store_true", help="do not display service result messages.")
+    parser_call = subparsers.add_parser('call')
+    parser_call.add_argument("topic", help="publish to this topic.")
+    parser_call.add_argument("type", help="message type.")
+    parser_call.add_argument("data", help="message data.", type=yaml_load)
+    parser_call.add_argument('-i', '--interval', type=float, default=-1, help='repeat inverval in seconds.')
+    parser_call.add_argument("-s", "--silent", action="store_true", help="do not display service result messages.")
 
     #  subparser for info
     parser_info = subparsers.add_parser('info')
