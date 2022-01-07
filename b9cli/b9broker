@@ -2,12 +2,15 @@
 
 import os
 import time
+
 import pickledb
 import logging
 import signal
 import paramiko
 import socket
 import argparse
+import xml.etree.ElementTree as ET
+
 import b9py
 
 
@@ -261,9 +264,10 @@ def parameter_cb(_request_topic, message: b9py.Message):
 
     # Put a value in the parameter db
     if message.data['cmd'].lower() == 'put':
-        param_name = message.data['namespace'] + "/" + message.data['name']
+        ns = message.data['namespace']
+        param_name = ns + "/" + message.data['name']
         param_entry = {'nodename': message.data['nodename'],
-                       'namespace': message.data['namespace'],
+                       'namespace': ns,
                        'type': message.data['type'],
                        'name': message.data['name'],
                        'value': message.data['value']}
@@ -301,6 +305,19 @@ def parameter_cb(_request_topic, message: b9py.Message):
     return msg
 
 
+def parameter_node(element: ET.Element):
+    namespace = element.attrib['ns']
+    param_name = namespace + "/" + element.attrib['name']
+    param_val = element.attrib['value']
+
+    param_entry = {'nodename': "default",
+                   'namespace': namespace,
+                   'type': element.attrib['type'],
+                   'name': element.attrib['name'],
+                   'value': param_val}
+    dbParam.set(param_name, param_entry)
+
+
 if __name__ == "__main__":
     print("B9 Broker")
 
@@ -309,11 +326,12 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
     ap.add_argument('-v', '--verbose', action='store_true', help='display debug messages')
+    ap.add_argument('-p', '--parameters', default="parameters/default.parm", help="default parameters file name")
 
     args = vars(ap.parse_args())
 
     # Init 'Broker' B9 core
-    b9 = b9py.B9('BROKER')
+    b9 = b9py.B9('BROKER', "127.0.0.1")
     b9.start_logger(level=logging.INFO)
 
     if args['verbose']:
@@ -359,5 +377,21 @@ if __name__ == "__main__":
                     'host': b9.hostname,
                     'pid': b9.pid}
     dbNode.set(b9.nodename, broker_entry)
+
+    # Load default parameters and parse parameters XML tree
+    tree = None
+    try:
+        tree = ET.parse(args['parameters'])
+
+        # Process each parameter node
+        root = tree.getroot()
+        for child in root:
+            if child.tag == "parameter":
+                parameter_node(child)
+
+        logging.info("Loaded default parameters from '{}'.".format(args['parameters']))
+
+    except FileNotFoundError:
+        logging.warning("No default parameters file named '{}'.".format(args['parameters']))
 
     b9.spin_forever()

@@ -305,6 +305,8 @@ class Publisher(object):
                     msg_q.timestamp = time.time()
                     if msg_q.source is None or len(msg_q.source.strip()) == 0:
                         msg_q.source = self._node_name
+                    if self._is_recording:
+                        msg_q.topic = self._topic
 
                     msg_b = msg_q.pack()
                     self._pub_sock.send_multipart([self._topic.encode('utf-8'), msg_b], zmq.DONTWAIT)

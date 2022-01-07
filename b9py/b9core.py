@@ -39,7 +39,7 @@ class B9(object):
         self._check_sub_count = 0
         self._current_sub_count = 0
 
-        # Set a default broker URI if not already specified and we are not the broker
+        # Set a default broker URI if not already specified, and we are not the broker
         if self._broker_uri is None and not self._is_broker:
             # Lookup broker URI from the official environment variable
             self._broker_uri = os.environ.get('B9_BROKER')
@@ -289,6 +289,9 @@ class B9(object):
         return b9py.ServiceClient(self._nodename, self._broker_uri,
                                   topic, namespace,
                                   srv_port, srv_host)
+
+    def create_parameter_client(self, nodename, namespace=None, parameter_topic=None):
+        return b9py.Parameter(self.broker_uri, nodename, namespace, parameter_topic)
 
 
 class B9Status(object):

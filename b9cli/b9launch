@@ -8,6 +8,7 @@ import logging
 import argparse
 import subprocess
 import xml.etree.ElementTree as ET
+import ast
 from colorama import Fore
 
 import b9py
@@ -30,6 +31,7 @@ def start_process(command, env, shell=False):
         return subprocess.Popen(command, env=env,
                                 stdin=sys.stdin, stdout=sys.stdout,
                                 shell=shell, universal_newlines=True, encoding='unicode')
+
     except PermissionError:
         return None
 
@@ -99,7 +101,7 @@ def node(element: ET.Element):
                       .format(element.attrib['type']), end='')
                 print(Fore.RESET)
             else:
-                print(Fore.YELLOW + "Running node at '{}'".format(node_exe), end='')
+                print(Fore.CYAN + "Running node at '{}'".format(node_exe), end='')
                 print(Fore.RESET)
                 _running_nodes.append(p)
     else:
@@ -111,17 +113,43 @@ def param(element: ET.Element):
     if "ns" in element.attrib.keys():
         ns = element.attrib['ns']
     elif args['namespace']:
-        ns = args['namespace']
+        ns = args['namespace']  # ???
     else:
-        ns = None   # Must be global
+        ns = None  # Must be global
+
+    if "topic" in element.attrib.keys():
+        param_service_topic = element.attrib['topic']  # Using an external parameter service
+        logging.info("Using external parameter service '{}'.".format(param_service_topic))
+    else:
+        param_service_topic = None  # Using the broker parameter service
+        logging.info("Using the broker parameter service.")
 
     if check_attributes("param", ['name', 'value'], element.attrib):
-        param_srv = b9py.Parameter(broker_uri, 'b9launch_cli', ns)
-        r = param_srv.put(element.attrib['name'], element.attrib['value'])
+        param_srv = b9py.Parameter(broker_uri, 'b9launch_cli', ns, param_service_topic)
+
+        try:
+            value = ast.literal_eval(element.attrib['value'])
+        except (SyntaxError, ValueError):
+            print(Fore.RED + "Unable to parse value '{}' for parameter '{}'."
+                  .format(element.attrib['value'], element.attrib['name']), end='')
+            print(Fore.RESET)
+            return
+
+        r = param_srv.put(element.attrib['name'], value)
         if not r.is_successful:
             print(Fore.RED + "Unable to set parameter {} to {}."
                   .format(element.attrib['name'], element.attrib['value']), end='')
             print(Fore.RESET)
+
+
+def pause(element: ET.Element):
+    if check_attributes("pause", ['delay'], element.attrib):
+        delay = float(element.attrib['delay'])
+        if "prompt" in element.attrib.keys():
+            logging.info(element.attrib['prompt'])
+        else:
+            logging.info("Starting delay for {} seconds.".format(delay))
+        time.sleep(delay)
 
 
 if __name__ == "__main__":
@@ -144,11 +172,16 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("file", default="", help="launch file name")
     ap.add_argument("-s", "--namespace", default="", help="topic namespace")
-    ap.add_argument("-b", "--broker", action="store_true", help="start Broker before launch.")
+
+    ap.add_argument("-b", "--broker", action="store_true", help="start broker before launch.")
+    ap.add_argument('-p', '--parameters', default="", help="default parameters file name for broker")
     args = vars(ap.parse_args())
 
     if args['broker']:
-        _run("b9broker")
+        if len(args['parameters']) > 0:
+            _run("b9broker --parameters {}".format(args['parameters']))
+        else:
+            _run("b9broker")
         time.sleep(3)
 
     # Get the broker's address
@@ -179,9 +212,11 @@ if __name__ == "__main__":
             param(child)
         elif child.tag == "run":
             run(child)
+        elif child.tag == "pause":
+            pause(child)
 
     # Wait for any and all nodes to complete
     while any(node.poll() is None for node in _running_nodes):
         time.sleep(.5)
 
-    print("All done.")
+    print("\nAll done.")

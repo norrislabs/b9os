@@ -19,14 +19,15 @@ def load_bag(bag_file):
     return msgs
 
 
-def print_msg(message):
+def print_msg(message: dict):
     header = message['header']
     time = datetime.datetime.fromtimestamp(header['timestamp'])
-    print("{:30}seq: {:8}type: {:8}src: {:28}data: {}".format(str(time),
-                                                              str(header['seq']),
-                                                              header['message_type'],
-                                                              header['source'],
-                                                              str(message['data'])), end="\r\n")
+    print("{:30}seq: {:8}type: {:8}src: {:25}topic: {:}\n  data: {}".format(str(time),
+                                                                            str(header['seq']),
+                                                                            header['message_type'],
+                                                                            header['source'],
+                                                                            header['topic'],
+                                                                            str(message['data'])), end="\r\n")
 
 
 if __name__ == "__main__":
@@ -66,7 +67,7 @@ if __name__ == "__main__":
 
         # Write out merged bag file
         output_file = open(args['output'], "wb")
-        for msg in merged:
+        for msg in sorted_msgs:
             msg_b = msgpack.packb(msg, use_bin_type=True)
             output_file.write(msg_b)
         output_file.close()

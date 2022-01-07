@@ -41,60 +41,105 @@ if __name__ == "__main__":
 
     #  subparser for list
     parser_list = subparsers.add_parser('list')
-    parser_list.add_argument("namespace", help='namespace of values.')
+    parser_list.add_argument("namespace", help='namespace of values')
+    parser_list.add_argument('-t', '--topic',
+                             default=None, help="parameter server topic")
 
     #  subparser for get
     parser_get = subparsers.add_parser('get')
-    parser_get.add_argument("namespace", help='namespace of values.')
-    parser_get.add_argument("name", help='name of parameter.')
+    parser_get.add_argument("namespace", help='namespace of values')
+    parser_get.add_argument("name", help='name of parameter')
+    parser_get.add_argument('-t', '--topic',
+                            default=None, help="parameter server topic")
 
     #  subparser for put
     parser_put = subparsers.add_parser('put')
-    parser_put.add_argument("namespace", help='namespace of values.')
-    parser_put.add_argument("name", help='name of parameter.')
-    parser_put.add_argument('value', type=yaml_load, help='value to store in parameter server.')
+    parser_put.add_argument("namespace", help='namespace of values')
+    parser_put.add_argument("name", help='name of parameter')
+    parser_put.add_argument('value', type=yaml_load, help='value to store in parameter server')
+    parser_put.add_argument('-t', '--topic',
+                            default=None, help="parameter server topic")
+
+    #  subparser for save
+    parser_save = subparsers.add_parser('save')
+    parser_save.add_argument("namespace", help='namespace of values')
+    parser_save.add_argument("filename", help='name of XML file')
+    parser_save.add_argument('-t', '--topic',
+                             default=None, help="parameter server topic")
+
+    #  subparser for load
+    parser_load = subparsers.add_parser('load')
+    parser_load.add_argument("namespace", help='namespace of values')
+    parser_load.add_argument("filename", help='name of XML file')
+    parser_load.add_argument('-t', '--topic',
+                             default=None, help="parameter server topic")
+
+    #  subparser for purge
+    parser_load = subparsers.add_parser('purge')
+    parser_load.add_argument("namespace", default="@", help='namespace of values')
+    parser_load.add_argument('-t', '--topic',
+                             default=None, help="parameter server topic")
 
     args = vars(ap.parse_args())
 
-    # Get the broker's address
-    broker_uri = os.environ.get('B9_BROKER')
-    if broker_uri is None:
-        broker_uri = 'localhost'
-        print("B9 broker URI was not specified. Using localhost.", end="\r\n")
-
     # Init B9 core
-    b9 = b9py.B9('b9parameter_cli', broker_uri)
+    b9 = b9py.B9('b9parameter_cli')
     b9.start_logger(level=logging.INFO)
     print(end="\r\n")
 
-    param_srv = b9py.Parameter(broker_uri, 'b9parameter_cli', args['namespace'])
+    param_client = b9.create_parameter_client(b9.nodename, args['namespace'], args['topic'])
 
     if args['command'].lower() == 'list':
-        r = param_srv.list()
+        r = param_client.list()
         if not r.is_successful:
             failed(r)
         else:
             for reg in r.result_data.data:
-                print("{:16}{:30}{:12}{:16}{}".format(reg['namespace'], reg['nodename'],
+                print("{:12}{:30}{:12}{:32}{}".format(reg['namespace'], reg['nodename'],
                                                       reg['type'], reg['name'], reg['value']), end="\r\n")
 
     elif args['command'].lower() == 'put':
-        r = param_srv.put(args['name'], args['value'])
+        r = param_client.put(args['name'], args['value'])
         if not r.is_successful:
             failed(r)
         else:
             print("Parameter {} has been set to {}".format(args['name'], args['value']), end="\r\n")
 
     elif args['command'].lower() == 'get':
-        r = param_srv.get(args['name'])
+        r = param_client.get(args['name'])
         if not r.is_successful:
             failed(r)
         else:
             reg = r.result_data.data
             if reg['found']:
-                print("{}\t{}\t{}\t{}\t{}".format(reg['namespace'], reg['nodename'],
-                                                  reg['type'], reg['name'], reg['value']), end="\r\n")
+                print("{:12}{:30}{:12}{:32}{}".format(reg['namespace'], reg['nodename'],
+                                                      reg['type'], reg['name'], reg['value']), end="\r\n")
             else:
                 print("Parameter {} does not exist in namespace {}.".format(args['name'], args['namespace']),
                       end="\r\n")
+
+    elif args['command'].lower() == 'save':
+        r = param_client.save(args['filename'], args['namespace'])
+        if not r.is_successful:
+            failed(r)
+        else:
+            print("Parameters have been saved to {}".format(args['filename']), end="\r\n")
+
+    elif args['command'].lower() == 'load':
+        r = param_client.load(args['filename'], args['namespace'])
+        if not r.is_successful:
+            failed(r)
+        else:
+            print("Parameters have been loaded from {}".format(args['filename']), end="\r\n")
+
+    elif args['command'].lower() == 'purge':
+        r = param_client.purge(args['namespace'])
+        if not r.is_successful:
+            failed(r)
+        else:
+            if args['namespace'] == '@':
+                print("All parameters purged.", end="\r\n")
+            else:
+                print("Parameters in namespace '{}' purged.".format(args['namespace']), end="\r\n")
+
     print(end="\r\n")
