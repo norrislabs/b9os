@@ -99,7 +99,7 @@ class B9(object):
             console.setFormatter(formatter)
             logging.getLogger("").addHandler(console)
 
-        logging.info("B9 version: {}".format(b9py.__version__))
+        logging.info("B9 OS version: {}".format(b9py.__version__))
         logging.info("B9 Logger has started.")
         logging.info("'{}' is running on {} at {}".format(self._nodename, self._hostname, self._host_ip))
         if not self._is_broker:

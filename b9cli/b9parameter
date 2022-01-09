@@ -126,7 +126,7 @@ if __name__ == "__main__":
             print("Parameters have been saved to {}".format(args['filename']), end="\r\n")
 
     elif args['command'].lower() == 'load':
-        r = param_client.load(args['filename'], args['namespace'])
+        r = param_client.load(args['filename'], args['namespace'], True)
         if not r.is_successful:
             failed(r)
         else:

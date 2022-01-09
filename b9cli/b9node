@@ -36,7 +36,7 @@ def print_registrations(items):
                      'Timestamp'), end="\r\n")
     print('-' * 100)
 
-    sorted_nodes = dict(sorted(items, key=lambda i: i[1][0]['host']))
+    sorted_nodes = dict(sorted(items, key=lambda i: (i[1][0]['host'], i[1][0]['nodename'])))
     for item in sorted_nodes:
         regspec = dict(items)[item][0]
         print(fmt.format(regspec['nodename'],

@@ -60,11 +60,12 @@ class Parameter(object):
                                                          self._broker_uri)
         return result
 
-    def load(self, filename, namespace="@"):
+    def load(self, filename, namespace="@", publish_change=True):
         result = b9py.ServiceClient.oneshot_service_call(self._nodename,
                                                          self._parameter_topic,
                                                          None,
-                                                         self._create_param_load_message(filename, namespace),
+                                                         self._create_param_load_message(filename, namespace,
+                                                                                         publish_change),
                                                          self._port,
                                                          None,
                                                          self._broker_uri)
@@ -106,10 +107,11 @@ class Parameter(object):
                                                              'filename': filename},
                             self._nodename)
 
-    def _create_param_load_message(self, filename, namespace):
+    def _create_param_load_message(self, filename, namespace, publish_change):
         return b9py.Message(b9py.Message.MSGTYPE_PARAMETER, {'cmd': 'LOAD',
                                                              'namespace': namespace,
-                                                             'filename': filename},
+                                                             'filename': filename,
+                                                             'publish_change': publish_change},
                             self._nodename)
 
     def _create_param_purge_message(self, namespace):
