@@ -34,8 +34,12 @@ class Message(object):
 
     def __init__(self, message_type, data, source=None, timestamp=None):
         ts = time.time() if timestamp is None else timestamp
-        self._header = {'timestamp': ts, 'message_type': message_type,
-                        'source': source, 'seq': Message._seq, 'topic': None}
+        self._header = {'timestamp': ts,
+                        'message_type': message_type,
+                        'source': source,
+                        'seq': Message._seq,
+                        'topic': None,
+                        'create_timestamp': time.time()}
         self._data = data
 
         Message._seq += 1
@@ -80,6 +84,14 @@ class Message(object):
     def data(self):
         return self._data
 
+    @property
+    def creation_timestamp(self):
+        return self._header['create_timestamp']
+
+    @property
+    def latency(self):
+        return round(self.creation_timestamp - self.timestamp, 3)
+
     def pack(self):
         msg_p = {'header': self._header, 'data': self._data}
         return msgpack.packb(msg_p, use_bin_type=True)
@@ -94,11 +106,11 @@ class Message(object):
 
     def __str__(self):
         ts = "{0: <18}".format(self.timestamp)
-        return "timestamp: {} seq: {}, source: {}, topic: {}, message_type: {}, data_type: {}, data: {}". \
+        return "timestamp: {} seq: {}, latency: {}, source: {}, message_type: {}, data_type: {}, data: {}". \
             format(ts,
                    self.sequence,
+                   self.latency,
                    self.source,
-                   self.topic if self.topic else "NA",
                    self.message_type,
                    self.data_type,
                    self.data)

@@ -20,6 +20,10 @@ colors = [Fore.LIGHTBLACK_EX, Fore.GREEN, Fore.MAGENTA, Fore.RED, Fore.BLUE, For
 assigned_colors = {}
 _running = True
 
+_max_latency = 0
+_lat_avg_list = [0]
+_lat_avg_size = 10
+
 
 class FPS:
     def __init__(self):
@@ -105,11 +109,31 @@ def echo_text_cb(_topic, message: b9py.Message):
         print("Echo - {}".format(message), end="\r\n")
 
 
+def _average(lst):
+    return round(sum(lst) / len(lst), 1)
+
+
 def echo_image_cb(_topic, message: b9py.Message):
     global _running
+    global _max_latency
+    global _lat_avg_list
+    global _lat_avg_size
 
     buff = np.frombuffer(message.data, np.uint8)
     img = cv2.imdecode(buff, cv2.IMREAD_COLOR)
+
+    lat_ms = message.latency * 1000
+
+    if len(_lat_avg_list) == _lat_avg_size:
+        _lat_avg_list.pop()
+    _lat_avg_list.append(lat_ms)
+    lat_avg = _average(_lat_avg_list)
+
+    _max_latency = max(_max_latency, lat_ms)
+
+    info_text = "{}, {}, {}".format(lat_ms, _max_latency, lat_avg)
+    cv2.putText(img, info_text,
+                (250, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
     with image_lock:
         cv2.imshow(args['topic'], img)
@@ -143,34 +167,47 @@ def print_registrations(regtype, items):
     else:
         title = '------ Subscribers '
 
-    print('{}{}'.format(title, '-' * (140 - len(title))))
-    fmt = "{:42}{:16}{:16}{:8}{:34}{}"
-    print(fmt.format('Topic',
+    color = Fore.RESET
+    print('{}{}'.format(title, '-' * (145 - len(title))))
+    fmt = "{}{:42}{:16}{:16}{:8}{:34}{}" + Fore.RESET
+    print(fmt.format(color,
+                     'Topic',
                      'Message_Type',
                      'IP',
                      'Port',
                      'Node_Name',
                      'Node_Host'), end="\r\n")
-    print('-' * 140)
+    print('-' * 145)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
         regspec = dict(items)[item][0]
-        if not regspec['nodename'].endswith('_cli'):
+        if not regspec['nodename'].endswith('_clix'):
             if regspec['message_type'] is None:
                 msgtype = "Any"
             else:
                 msgtype = regspec['message_type']
-            print(fmt.format(regspec['topic'],
+
+            if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
+                ip = "-" * 14
+                the_port = "-" * 4
+                msgtype = '-' * 14
+                color = Fore.YELLOW
+            else:
+                ip = regspec['IP']
+                the_port = str(regspec['port'])
+                color = Fore.RESET
+
+            print(fmt.format(color,
+                             regspec['topic'],
                              msgtype,
-                             regspec['IP'],
-                             str(regspec['port']),
+                             ip,
+                             the_port,
                              regspec['nodename'],
                              regspec['owner_host'] + "/" + regspec['owner_ip']), end="\r\n")
 
 
 _fps = FPS()
-
 
 if __name__ == "__main__":
     print("\nB9 Topic Tool", end="\r\n")

@@ -209,7 +209,7 @@ class B9(object):
                         self._current_sub_count = 0
                         for sub in self._subscribers:
                             if not sub.have_publisher:
-                                sub.subscribe(quiet=quiet, retry_interval=0)
+                                sub.subscribe(quiet=quiet)
                 else:
                     if not self._have_all_publishers:
                         logging.info("{} - All subscribers have publishers.".format(self._nodename))

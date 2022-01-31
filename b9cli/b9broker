@@ -143,11 +143,13 @@ def topic_registration_cb(_request_topic, message: b9py.Message):
         reg_entry = {'nodename': message.data['nodename'], 'topic': message.data['topic'],
                      'IP': message.data['IP'], 'port': message.data['port'],
                      'message_type': message.data['message_type'],
-                     'owner_ip': message.data['this_ip'], 'owner_host': message.data['this_host']}
+                     'owner_ip': message.data['this_ip'],
+                     'owner_host': message.data['this_host']}
 
         if message.data['sub_cmd'].lower() == 'pub':
             db_put(dbPub, "Publisher", topic, reg_entry)
         elif message.data['sub_cmd'].lower() == 'sub':
+            reg_entry['has_publisher'] = message.data['has_publisher']
             db_put_multi(dbSub, "Subscriber", topic, reg_entry)
         elif message.data['sub_cmd'].lower() == 'srv':
             db_put(dbSrv, "Service", topic, reg_entry)
