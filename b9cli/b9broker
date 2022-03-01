@@ -259,11 +259,6 @@ def node_registration_cb(_request_node, message: b9py.Message):
 def parameter_cb(_request_topic, message: b9py.Message):
     msg = b9py.MessageFactory.create_message_string("OK", param_srv.name)
 
-    if args['verbose']:
-        logging.info("Parameter - '{}', '{}' = '{}'".format(message.data['cmd'],
-                                                            message.data['name'],
-                                                            message.data['value']))
-
     # Put a value in the parameter db
     if message.data['cmd'].lower() == 'put':
         ns = message.data['namespace']
@@ -275,34 +270,54 @@ def parameter_cb(_request_topic, message: b9py.Message):
                        'value': message.data['value']}
         dbParam.set(param_name, param_entry)
 
+        if args['verbose']:
+            logging.info("Parameter - '{}', '{}', '{}' = '{}'".format(message.data['cmd'],
+                                                                      message.data['type'],
+                                                                      message.data['name'],
+                                                                      message.data['value']))
+
     # Get a value from the parameter db
     elif message.data['cmd'].lower() == 'get':
         param_name = message.data['namespace'] + "/" + message.data['name']
         if not dbParam.exists(param_name):
             logging.debug("{} parameter is not set.".format(param_name))
-            result = {'namespace': message.data['namespace'],
-                      'type': 'str',
-                      'name': message.data['name'],
-                      'value': '?',
-                      'found': False}
-            msg = b9py.MessageFactory.create_message_dictionary(result)
+            item = {'namespace': message.data['namespace'],
+                    'type': 'String',
+                    'name': message.data['name'],
+                    'value': '?',
+                    'found': False}
+            msg = b9py.MessageFactory.create_message_dictionary(item)
         else:
             item = dbParam.get(param_name)
             item['found'] = True
             msg = b9py.MessageFactory.create_message_dictionary(item)
+
+        if args['verbose']:
+            logging.info("Parameter - '{}', '{}', '{}' = '{}', found = {}".format(message.data['cmd'],
+                                                                                  msg.data['type'],
+                                                                                  msg.data['name'],
+                                                                                  msg.data['value'],
+                                                                                  msg.data['found']))
 
     # List all name/values in the parameter db
     elif message.data['cmd'].lower() == 'list':
         item_list = []
         for pname in dbParam.getall():
             item = dbParam.get(pname)
-            if message.data['namespace'] == item['namespace']:
+            if message.data['namespace'] == '@' or message.data['namespace'] == item['namespace']:
                 item_list.append(item)
         msg = b9py.MessageFactory.create_message_list(item_list)
+
+        if args['verbose']:
+            logging.info("Parameter - '{}' all in '{}'".format(message.data['cmd'],
+                                                               message.data['namespace']))
 
     # Purge all values from the parameter db
     elif message.data['cmd'].lower() == 'purge':
         dbParam.deldb()
+
+        if args['verbose']:
+            logging.info("Parameter - 'PURGE'")
 
     return msg
 

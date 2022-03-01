@@ -73,6 +73,10 @@ def node(element: ET.Element):
     node_exe = os.path.join(workspace_dir, element.attrib['pkg'], element.attrib['type'])
     if os.path.exists(node_exe):
         cmd = [PYTHON_EXE, node_exe, "--nodename=" + element.attrib['name']]
+        sudo = True if "sudo" in element.attrib.keys() and element.attrib['sudo'] else False
+        if sudo:
+            cmd.insert(0, "-E")
+            cmd.insert(0, "sudo")
 
         # Set namespace if specified
         if "ns" in element.attrib.keys():
@@ -101,7 +105,10 @@ def node(element: ET.Element):
                       .format(element.attrib['type']), end='')
                 print(Fore.RESET)
             else:
-                print(Fore.CYAN + "Running node at '{}'".format(node_exe), end='')
+                if sudo:
+                    print(Fore.CYAN + "Running node with 'sudo' at '{}'".format(node_exe), end='')
+                else:
+                    print(Fore.CYAN + "Running node at '{}'".format(node_exe), end='')
                 print(Fore.RESET)
                 _running_nodes.append(p)
     else:

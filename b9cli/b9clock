@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+
+import os
+import time
+import datetime
+import signal
+import logging
+
+import b9py
+
+
+# Control-C handler
+def shutdown_handler(_sig, _frame):
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def format_nanos(nanos):
+    dt = datetime.datetime.fromtimestamp(nanos / 1e9)
+    return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+
+def set_clock(host, namespace):
+    # Setup clock publisher
+    topic = "computer/clock/" + host
+    pub_clock = b9.create_publisher(topic, b9py.Message.MSGTYPE_INT, namespace)
+    pstat = pub_clock.advertise()
+    if not pstat.is_successful:
+        print("Clock publisher for '{}' failed to advertise.".format(topic))
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    time_ns = time.clock_gettime_ns(time.CLOCK_REALTIME)
+    msg = b9py.MessageFactory.create_message_int(time_ns)
+    pstat = pub_clock.publish(msg)
+    if pstat.is_successful:
+        print("Clock set to '{}' on topic '/{}/{}'".format(format_nanos(time_ns), namespace, topic))
+        b9.spin_once()
+    else:
+        print("Failed to set clock to '{}' on topic '/{}/{}'".format(format_nanos(time_ns), namespace, topic))
+
+
+if __name__ == "__main__":
+    print("\nB9 (Save the) Clock (Tower) Tool")
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    # Get the broker's address
+    broker_uri = os.environ.get('B9_BROKER')
+    if broker_uri is None:
+        broker_uri = 'localhost'
+        print("B9 broker URI was not specified. Using localhost.", end="\r\n")
+
+    # Init B9 core
+    b9 = b9py.B9('b9list_cli', broker_uri)
+    b9.start_logger(level=logging.ERROR)
+
+    print("B9 OS version: {}".format(b9py.__version__), end="\r\n")
+
+    client = b9py.ServiceClient('b9node', None, 'broker/registration/node', None, 5557, broker_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        # Get node list
+        result = client.call_service(b9py.MessageFactory.create_node_list_message())
+        if not result.is_successful:
+            print("Registration service has failed. {}".format(result.status_type), end="\r\n")
+        else:
+            for item in (result.result_data.data.items()):
+                node_elements = item[0].split('_')
+                if len(node_elements) == 3 and node_elements[1].lower() == 'clock':
+                    set_clock(node_elements[2].lower(), node_elements[0])
+    else:
+        print("Unable to connect to service. {}".format(stat.status_type), end="\r\n")
+
+    print(end="\r\n")

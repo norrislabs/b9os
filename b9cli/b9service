@@ -24,7 +24,7 @@ def yaml_load(dinput):
     return yaml.load(dinput, Loader=yaml.FullLoader)
 
 
-def print_registrations(items):
+def print_registrations(items, nodename=None):
     title = '------ Services '
     print('{}{}'.format(title, '-' * (140 - len(title))))
     fmt = "{:45}{:16}{:16}{:8}{:30}{}"
@@ -38,18 +38,46 @@ def print_registrations(items):
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
-        regspec = dict(items)[item][0]
-        if not regspec['nodename'].endswith('_cli'):
-            if regspec['message_type'] is None:
-                msgtype = "Any"
-            else:
-                msgtype = regspec['message_type']
-            print(fmt.format(regspec['topic'],
-                             msgtype,
-                             regspec['IP'],
-                             str(regspec['port']),
-                             regspec['nodename'],
-                             regspec['owner_host'] + "/" + regspec['owner_ip']), end="\r\n")
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if not (regspec['nodename'].endswith('_cli')):
+                if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    if regspec['message_type'] is None:
+                        msgtype = "Any"
+                    else:
+                        msgtype = regspec['message_type']
+                    print(fmt.format(regspec['topic'],
+                                     msgtype,
+                                     regspec['IP'],
+                                     str(regspec['port']),
+                                     regspec['nodename'],
+                                     regspec['owner_host'] + "/" + regspec['owner_ip']), end="\r\n")
+
+
+def print_registrations_simple(items, nodename=None):
+    title = '------ Services '
+    print('{}{}'.format(title, '-' * (105 - len(title))))
+    fmt = "{:45}{:16}{:30}{}"
+    print(fmt.format('Topic',
+                     'Message_Type',
+                     'Node_Name',
+                     'Node_Host'), end="\r\n")
+    print('-' * 105)
+
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if not (regspec['nodename'].endswith('_cli')):
+                if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    if regspec['message_type'] is None:
+                        msgtype = "Any"
+                    else:
+                        msgtype = regspec['message_type']
+                    print(fmt.format(regspec['topic'],
+                                     msgtype,
+                                     regspec['nodename'],
+                                     regspec['owner_host']), end="\r\n")
 
 
 _running = True
@@ -66,6 +94,8 @@ if __name__ == "__main__":
 
     #  subparser for list
     parser_list = subparsers.add_parser('list')
+    parser_list.add_argument('-n', '--nodename', type=str, default=None, help='filter by node name.')
+    parser_list.add_argument('-v', '--verbose', action='store_false', help='display in verbose mode')
 
     #  subparser for call
     parser_call = subparsers.add_parser('call')
@@ -105,7 +135,10 @@ if __name__ == "__main__":
                 print("Registration service has failed. {}".format(result.status_type), end="\r\n")
                 os.kill(os.getpid(), signal.SIGKILL)
             else:
-                print_registrations(result.result_data.data.items())
+                if args['verbose']:
+                    print_registrations_simple(result.result_data.data.items(), args['nodename'])
+                else:
+                    print_registrations(result.result_data.data.items(), args['nodename'])
 
         # Call
         elif args['command'].lower() == 'call':

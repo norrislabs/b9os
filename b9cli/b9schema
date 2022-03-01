@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+
+import os
+import logging
+import signal
+import argparse
+from colorama import Fore
+
+import b9py
+
+
+# Control-C handler
+def shutdown_handler(_sig, _frame):
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def failed(result):
+    print("Registration service has failed. {}".format(result.status_type), end="\r\n")
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def print_node_registrations(items):
+    title = '------ Nodes '
+    print('{}{}'.format(title, '-' * (145 - len(title))))
+    fmt = "{:42}{:16}{:16}{:8}"
+    print(fmt.format('Name',
+                     'Host',
+                     'IP',
+                     'PID'), end="\r\n")
+    print('-' * 145)
+
+    sorted_nodes = dict(sorted(items, key=lambda i: (i[1][0]['host'], i[1][0]['nodename'])))
+    last_host = None
+    for item in sorted_nodes:
+        regspec = dict(items)[item][0]
+        if last_host and regspec['host'] != last_host:
+            print(end="\r\n")
+        print(fmt.format(regspec['nodename'],
+                         regspec['host'],
+                         str(regspec['IP']),
+                         str(regspec['pid'])),
+              end="\r\n")
+        last_host = regspec['host']
+
+
+def print_node_registrations_simple(items):
+    title = '------ Nodes '
+    print('{}{}'.format(title, '-' * (105 - len(title))))
+    fmt = "{:42}{:16}"
+    print(fmt.format('Name',
+                     'Host'), end="\r\n")
+    print('-' * 105)
+
+    sorted_nodes = dict(sorted(items, key=lambda i: (i[1][0]['host'], i[1][0]['nodename'])))
+    last_host = None
+    for item in sorted_nodes:
+        regspec = dict(items)[item][0]
+        if last_host and regspec['host'] != last_host:
+            print(end="\r\n")
+        print(fmt.format(regspec['nodename'],
+                         regspec['host']),
+              end="\r\n")
+        last_host = regspec['host']
+
+
+def print_topic_registrations(regtype, items, nodename=None):
+    if regtype == 'pub':
+        title = '------ Publishers '
+    else:
+        title = '------ Subscribers '
+
+    if args['nocolor']:
+        color = ''
+    else:
+        color = Fore.RESET
+
+    print('{}{}'.format(title, '-' * (145 - len(title))))
+    fmt = "{}{:42}{:16}{:16}{:8}{:34}{}" + color
+    print(fmt.format(color,
+                     'Topic',
+                     'Message_Type',
+                     'IP',
+                     'Port',
+                     'Node_Name',
+                     'Node_Host'), end="\r\n")
+    print('-' * 145)
+
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if not (regspec['nodename'].endswith('_cli') and regtype == "sub"):
+                if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    if regspec['message_type'] is None:
+                        msgtype = "Any"
+                    else:
+                        msgtype = regspec['message_type']
+
+                    if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
+                        ip = "-" * 14
+                        the_port = "-" * 4
+                        msgtype = '-' * 14
+                        if not args['nocolor']:
+                            color = Fore.YELLOW
+                    else:
+                        ip = regspec['IP']
+                        the_port = str(regspec['port'])
+                        if not args['nocolor']:
+                            color = Fore.RESET
+
+                    print(fmt.format(color,
+                                     regspec['topic'],
+                                     msgtype,
+                                     ip,
+                                     the_port,
+                                     regspec['nodename'],
+                                     regspec['owner_host'] + "/" + regspec['owner_ip']), end="\r\n")
+
+
+def print_topic_registrations_simple(regtype, items, nodename=None):
+    if regtype == 'pub':
+        title = '------ Publishers '
+    else:
+        title = '------ Subscribers '
+
+    if args['nocolor']:
+        color = ''
+    else:
+        color = Fore.RESET
+
+    print('{}{}'.format(title, '-' * (105 - len(title))))
+    fmt = "{}{:42}{:16}{:34}{}" + Fore.RESET
+    print(fmt.format(color,
+                     'Topic',
+                     'Message_Type',
+                     'Node_Name',
+                     'Node_Host'), end="\r\n")
+    print('-' * 105)
+
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if not (regspec['nodename'].endswith('_cli') and regtype == "sub"):
+                if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    if regspec['message_type'] is None:
+                        msgtype = "Any"
+                    else:
+                        msgtype = regspec['message_type']
+
+                    if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
+                        msgtype = '-' * 14
+                        if not args['nocolor']:
+                            color = Fore.YELLOW
+                    else:
+                        if not args['nocolor']:
+                            color = Fore.RESET
+
+                    print(fmt.format(color,
+                                     regspec['topic'],
+                                     msgtype,
+                                     regspec['nodename'],
+                                     regspec['owner_host']), end="\r\n")
+
+
+def print_service_registrations(items, nodename=None):
+    title = '------ Services '
+    print('{}{}'.format(title, '-' * (145 - len(title))))
+    fmt = "{:42}{:16}{:16}{:8}{:34}{}"
+    print(fmt.format('Topic',
+                     'Message_Type',
+                     'IP',
+                     'Port',
+                     'Node_Name',
+                     'Node_Host'), end="\r\n")
+    print('-' * 145)
+
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    srv_count = 0
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if not regspec['nodename'].endswith('_cli'):
+                if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    srv_count += 1
+                    if regspec['message_type'] is None:
+                        msgtype = "Any"
+                    else:
+                        msgtype = regspec['message_type']
+                    print(fmt.format(regspec['topic'],
+                                     msgtype,
+                                     regspec['IP'],
+                                     str(regspec['port']),
+                                     regspec['nodename'],
+                                     regspec['owner_host'] + "/" + regspec['owner_ip']), end="\r\n")
+    if srv_count == 0:
+        print("No services provided by this node.", end="\r\n")
+
+
+def print_service_registrations_simple(items, nodename=None):
+    title = '------ Services '
+    print('{}{}'.format(title, '-' * (105 - len(title))))
+    fmt = "{:42}{:16}{:34}{}"
+    print(fmt.format('Topic',
+                     'Message_Type',
+                     'Node_Name',
+                     'Node_Host'), end="\r\n")
+    print('-' * 105)
+
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    srv_count = 0
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if not (regspec['nodename'].endswith('_cli')):
+                if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    srv_count += 1
+                    if regspec['message_type'] is None:
+                        msgtype = "Any"
+                    else:
+                        msgtype = regspec['message_type']
+                    print(fmt.format(regspec['topic'],
+                                     msgtype,
+                                     regspec['nodename'],
+                                     regspec['owner_host']), end="\r\n")
+    if srv_count == 0:
+        print("No services provided by this node.", end="\r\n")
+
+
+def print_parameters(title, items):
+    width = 145 if args['verbose'] else 105
+    title = '------ Parameters in ' + title + " "
+    print('{}{}'.format(title, '-' * (width - len(title))))
+    fmt = "{:42}{:16}{:28}{}"
+    print(fmt.format('Namespace',
+                     'Type',
+                     'Name',
+                     'Value'), end="\r\n")
+    print('-' * width)
+
+    for reg in items:
+        print(fmt.format(reg['namespace'], reg['type'], reg['name'], reg['value']), end="\r\n")
+
+
+def print_parameter_server(title, parameter_topic=None):
+    param_client = b9.create_parameter_client(b9.nodename, '@', parameter_topic)
+    r = param_client.list()
+    if not r.is_successful:
+        failed(r)
+    else:
+        print_parameters(title, r.result_data.data)
+
+
+def get_node_list():
+    client = b9py.ServiceClient('b9node', None, 'broker/registration/node', None, 5557, broker_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        r = client.call_service(b9py.MessageFactory.create_node_list_message())
+        client.close()
+        if not r.is_successful:
+            print("Registration service has failed. {}".format(r.status_type), end="\r\n")
+            return None
+        else:
+            return r.result_data.data.items()
+
+
+def get_services_list():
+    client = b9py.ServiceClient('b9service', None, 'broker/registration/topic', None, 5555, broker_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        r = client.call_service(b9py.MessageFactory.create_srv_list_message())
+        client.close()
+        if not r.is_successful:
+            print("Registration service has failed. {}".format(r.status_type), end="\r\n")
+            return None
+        else:
+            return r.result_data.data.items()
+
+
+def document(verbose, by_nodename):
+    # List nodes
+    if not by_nodename:
+        node_list = get_node_list()
+        if node_list:
+            if verbose:
+                print_node_registrations(node_list)
+            else:
+                print_node_registrations_simple(node_list)
+            print(end="\r\n")
+            print(end="\r\n")
+        else:
+            os.kill(os.getpid(), signal.SIGKILL)
+    else:
+        print(end="\r\n")
+        if verbose:
+            length = 145
+        else:
+            length = 105
+        print('~' * length)
+
+        header = "Topics/Services for node '{}'".format(by_nodename)
+        print("{}{}".format(' ' * int(length / 2 - len(header) / 2), header), end="\r\n")
+        print(end="\r\n")
+
+    # List broker parameters
+    if by_nodename is None:
+        print_parameter_server("Broker", None)
+        print(end="\r\n")
+        print(end="\r\n")
+
+        # Look for parameter servers and list out their parameters
+        srvs = get_services_list()
+        for srv in srvs:
+            spec = srv[1][0]
+            if spec['message_type'] == 'Parameter':
+                print_parameter_server(spec['nodename'], spec['topic'])
+                print(end="\r\n")
+                print(end="\r\n")
+
+    # List topics
+    client = b9py.ServiceClient('b9topic', None, 'broker/registration/topic', None, 5555, broker_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        r = client.call_service(b9py.MessageFactory.create_topic_list_message('pub'))
+        if not r.is_successful:
+            failed(r)
+        else:
+            if verbose:
+                print_topic_registrations('pub', r.result_data.data.items(), by_nodename)
+            else:
+                print_topic_registrations_simple('pub', r.result_data.data.items(), by_nodename)
+        print(end="\r\n")
+        print(end="\r\n")
+
+        r = client.call_service(b9py.MessageFactory.create_topic_list_message('sub'))
+        if not r.is_successful:
+            failed(r)
+        else:
+            if verbose:
+                print_topic_registrations('sub', r.result_data.data.items(), by_nodename)
+            else:
+                print_topic_registrations_simple('sub', r.result_data.data.items(), by_nodename)
+
+        client.close()
+        print(end="\r\n")
+        print(end="\r\n")
+
+    # List services
+    srv_list = get_services_list()
+    if srv_list:
+        if verbose:
+            print_service_registrations(srv_list, by_nodename)
+        else:
+            print_service_registrations_simple(srv_list, by_nodename)
+        print(end="\r\n")
+        print(end="\r\n")
+
+    # Page break (formfeed)
+    if args['pagebreak']:
+        print("{}".format('\x0c'), end='')
+
+
+if __name__ == "__main__":
+    print("B9 Schema Tool")
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument('-x', '--nocolor', action='store_true', help='no color commands in output')
+    ap.add_argument('-n', '--nodename', type=str, default=None, help='filter by node name.')
+    ap.add_argument('-b', '--bynode', action='store_true', help='display by node.')
+    ap.add_argument('-v', '--verbose', action='store_true', help='display in verbose mode')
+    ap.add_argument('-p', '--pagebreak', action='store_true', help='add page breaks')
+
+    args = vars(ap.parse_args())
+
+    # Get the broker's address
+    broker_uri = os.environ.get('B9_BROKER')
+    if broker_uri is None:
+        broker_uri = 'localhost'
+        print("B9 broker URI was not specified. Using localhost.", end="\r\n")
+
+    # Init B9 core
+    b9 = b9py.B9('b9list_cli', broker_uri)
+    b9.start_logger(level=logging.ERROR)
+
+    print("B9 OS version: {}".format(b9py.__version__), end="\r\n")
+    print(end="\r\n")
+
+    if args['bynode']:
+        nodes = get_node_list()
+        if nodes:
+            for node in nodes:
+                if node[0] != 'BROKER':
+                    document(args['verbose'], node[0])
+    else:
+        document(args['verbose'], args['nodename'])

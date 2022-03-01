@@ -29,6 +29,20 @@ def yaml_load(dinput):
         return None
 
 
+def print_parameters(title, items):
+    title = '------ Parameters in ' + title + " "
+    print('{}{}'.format(title, '-' * (105 - len(title))))
+    fmt = "{:42}{:16}{:28}{}"
+    print(fmt.format('Namespace',
+                     'Type',
+                     'Name',
+                     'Value'), end="\r\n")
+    print('-' * 105)
+
+    for parm in items:
+        print(fmt.format(parm['namespace'], parm['type'], parm['name'], parm['value']), end="\r\n")
+
+
 if __name__ == "__main__":
     print("\nB9 Parameter Tool", end="\r\n")
 
@@ -82,8 +96,13 @@ if __name__ == "__main__":
 
     args = vars(ap.parse_args())
 
+    broker_uri = os.environ.get('B9_BROKER')
+    if broker_uri is None:
+        broker_uri = 'localhost'
+        print("B9 broker URI is unspecified. Using localhost.", end="\r\n")
+
     # Init B9 core
-    b9 = b9py.B9('b9parameter_cli')
+    b9 = b9py.B9('b9parameter_cli', broker_uri)
     b9.start_logger(level=logging.INFO)
     print(end="\r\n")
 
@@ -94,9 +113,7 @@ if __name__ == "__main__":
         if not r.is_successful:
             failed(r)
         else:
-            for reg in r.result_data.data:
-                print("{:12}{:30}{:12}{:32}{}".format(reg['namespace'], reg['nodename'],
-                                                      reg['type'], reg['name'], reg['value']), end="\r\n")
+            print_parameters("Broker" if not args['topic'] else args['topic'], r.result_data.data)
 
     elif args['command'].lower() == 'put':
         r = param_client.put(args['name'], args['value'])

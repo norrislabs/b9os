@@ -14,7 +14,7 @@ class Parameter(object):
         if parameter_topic:
             # Using an external parameter server
             self._parameter_topic = parameter_topic
-            self._port = 5556 if parameter_topic == 'broker/parameter' else None
+            self._port = None
         else:
             # Use the broker's parameter server
             self._parameter_topic = 'broker/parameter'
@@ -26,8 +26,8 @@ class Parameter(object):
                                                          None,
                                                          self._create_param_put_message(name, value),
                                                          self._port,
-                                                         None,
-                                                         self._broker_uri)
+                                                         self._broker_uri if self._port else None,
+                                                         self._broker_uri if self._port is None else None)
         return result
 
     def get(self, name):
@@ -36,8 +36,8 @@ class Parameter(object):
                                                          None,
                                                          self._create_param_get_message(name),
                                                          self._port,
-                                                         None,
-                                                         self._broker_uri)
+                                                         self._broker_uri if self._port else None,
+                                                         self._broker_uri if self._port is None else None)
         return result
 
     def list(self):
@@ -46,20 +46,22 @@ class Parameter(object):
                                                          None,
                                                          self._create_param_list_message(),
                                                          self._port,
-                                                         None,
-                                                         self._broker_uri)
+                                                         self._broker_uri if self._port else None,
+                                                         self._broker_uri if self._port is None else None)
         return result
 
+    # specifying a namespace of '@' means save all namespaces
     def save(self, filename, namespace="@"):
         result = b9py.ServiceClient.oneshot_service_call(self._nodename,
                                                          self._parameter_topic,
                                                          None,
                                                          self._create_param_save_message(filename, namespace),
                                                          self._port,
-                                                         None,
-                                                         self._broker_uri)
+                                                         self._broker_uri if self._port else None,
+                                                         self._broker_uri if self._port is None else None)
         return result
 
+    # specifying a namespace of '@' means load all namespaces in file
     def load(self, filename, namespace="@", publish_change=True):
         result = b9py.ServiceClient.oneshot_service_call(self._nodename,
                                                          self._parameter_topic,
@@ -67,25 +69,34 @@ class Parameter(object):
                                                          self._create_param_load_message(filename, namespace,
                                                                                          publish_change),
                                                          self._port,
-                                                         None,
-                                                         self._broker_uri)
+                                                         self._broker_uri if self._port else None,
+                                                         self._broker_uri if self._port is None else None)
         return result
 
+    # specifying a namespace of '@' means purge all namespaces
     def purge(self, namespace="@"):
         result = b9py.ServiceClient.oneshot_service_call(self._nodename,
                                                          self._parameter_topic,
                                                          None,
                                                          self._create_param_purge_message(namespace),
                                                          self._port,
-                                                         None,
-                                                         self._broker_uri)
+                                                         self._broker_uri if self._port else None,
+                                                         self._broker_uri if self._port is None else None)
         return result
+
+    @staticmethod
+    def _type_string(value):
+        t = type(value).__name__.capitalize()
+        if t.lower() == 'str':
+            return 'String'
+        else:
+            return t
 
     def _create_param_put_message(self, name, value: b9py.Message):
         return b9py.Message(b9py.Message.MSGTYPE_PARAMETER, {'cmd': 'PUT',
                                                              'nodename': self._nodename,
                                                              'namespace': self._namespace,
-                                                             'type': type(value).__name__.capitalize(),     # !!!
+                                                             'type': self._type_string(value),
                                                              'name': name,
                                                              'value': value},
                             self._nodename)
