@@ -30,7 +30,7 @@ def set_clock(host, namespace):
 
     time_ns = time.clock_gettime_ns(time.CLOCK_REALTIME)
     msg = b9py.MessageFactory.create_message_int(time_ns)
-    pstat = pub_clock.publish(msg)
+    pstat = pub_clock.publish_direct(msg)
     if pstat.is_successful:
         print("Clock set to '{}' on topic '/{}/{}'".format(format_nanos(time_ns), namespace, topic))
         b9.spin_once()
@@ -51,7 +51,7 @@ if __name__ == "__main__":
         print("B9 broker URI was not specified. Using localhost.", end="\r\n")
 
     # Init B9 core
-    b9 = b9py.B9('b9list_cli', broker_uri)
+    b9 = b9py.B9('b9clock_cli', broker_uri)
     b9.start_logger(level=logging.ERROR)
 
     print("B9 OS version: {}".format(b9py.__version__), end="\r\n")

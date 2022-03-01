@@ -268,6 +268,17 @@ class Publisher(object):
             logging.error(err_msg)
             return b9py.B9Status.failed_status(b9py.B9Status.ERR_WRONG_MESSAGE, err_msg)
 
+    def publish_direct(self, message):
+        if self._message_type is None or message.message_type == self._message_type:
+            self._send_msg(message)
+            return b9py.B9Status.success_status()
+        else:
+            err_msg = "'{}' on node '{}'. Incoming {} != {}. {}".format(self._pub_name, self._node_name,
+                                                                        message.message_type, self._message_type,
+                                                                        b9py.B9Status.ERR_WRONG_MESSAGE)
+            logging.error(err_msg)
+            return b9py.B9Status.failed_status(b9py.B9Status.ERR_WRONG_MESSAGE, err_msg)
+
     def publish_wait(self, message):
         # Publish message
         self.publish(message)
@@ -287,6 +298,24 @@ class Publisher(object):
         except asyncio.CancelledError:
             logging.debug("'" + self._pub_name + "' publish_wait task has been canceled.")
 
+    def _send_msg(self, msg):
+        msg.timestamp = time.time()
+        if msg.source is None or len(msg.source.strip()) == 0:
+            msg.source = self._node_name
+        if self._is_recording:
+            msg.topic = self._topic
+
+        # Send this message packing!
+        msg_b = msg.pack()
+        self._pub_sock.send_multipart([self._topic.encode('utf-8'), msg_b], zmq.DONTWAIT)
+
+        if self._is_recording:
+            # Record this message
+            self._recording_file.write(msg_b)
+            self._record_count += 1
+            if self._record_count % 1000 == 0:
+                logging.info("Recorder for '{}' has {} messages.".format(self._topic, self._record_count))
+
     async def _pub_task(self):
         # Give time for subscribers to initialize
         await asyncio.sleep(1)
@@ -302,20 +331,7 @@ class Publisher(object):
                 # Publish message to topic if any in the queue
                 if self._queue.qsize() > 0:
                     msg_q = await self._queue.get()
-                    msg_q.timestamp = time.time()
-                    if msg_q.source is None or len(msg_q.source.strip()) == 0:
-                        msg_q.source = self._node_name
-                    if self._is_recording:
-                        msg_q.topic = self._topic
-
-                    msg_b = msg_q.pack()
-                    self._pub_sock.send_multipart([self._topic.encode('utf-8'), msg_b], zmq.DONTWAIT)
-                    if self._is_recording:
-                        self._recording_file.write(msg_b)
-                        self._record_count += 1
-                        if self._record_count % 1000 == 0:
-                            logging.info("Recorder for '{}' has {} messages.".format(self._topic,
-                                                                                     self._record_count))
+                    self._send_msg(msg_q)
 
         except asyncio.CancelledError:
             logging.debug("'" + self._pub_name + "' publish task of has been canceled.")
