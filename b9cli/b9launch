@@ -10,6 +10,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 import ast
 from colorama import Fore
+import pyfiglet
 
 import b9py
 
@@ -160,8 +161,6 @@ def pause(element: ET.Element):
 
 
 if __name__ == "__main__":
-    print("B9 Launch Utility")
-
     # Control-C handler
     signal.signal(signal.SIGINT, shutdown_handler)
 
@@ -172,9 +171,6 @@ if __name__ == "__main__":
         print(Fore.RED + "Launch utility must be started in the B9 root or workspace directory.")
         print(Fore.RESET)
         os.kill(os.getpid(), signal.SIGKILL)
-
-    print("Current working directory is '{}'".format(os.getcwd()))
-    print("B9 Workspace directory is '{}'".format(workspace_dir))
 
     ap = argparse.ArgumentParser()
     ap.add_argument("file", default="", help="launch file name")
@@ -191,6 +187,8 @@ if __name__ == "__main__":
             _run("b9broker")
         time.sleep(3)
 
+    print(pyfiglet.figlet_format("B9 Launch"))
+
     # Get the broker's address
     broker_uri = os.environ.get('B9_BROKER')
     if broker_uri is None:
@@ -200,7 +198,9 @@ if __name__ == "__main__":
     # Init B9 core
     b9 = b9py.B9('b9launch_cli', broker_uri)
     b9.start_logger(level=logging.INFO)
-    print()
+
+    logging.info("Current working directory is '{}'".format(os.getcwd()))
+    logging.info("B9 Workspace directory is '{}'".format(workspace_dir))
 
     # Parse launch XML tree
     tree = None

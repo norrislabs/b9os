@@ -10,6 +10,7 @@ from colorama import Fore
 import tempfile
 import getpass
 import datetime
+import pyfiglet
 
 
 B9OS_OS_DIR = "b9os"
@@ -226,7 +227,7 @@ def deploy_a_file(element):
 
 
 if __name__ == "__main__":
-    print("B9 Deployment Utility")
+    print(pyfiglet.figlet_format("B9 Deploy"))
 
     # Control-C handler
     signal.signal(signal.SIGINT, shutdown_handler)
@@ -347,4 +348,7 @@ if __name__ == "__main__":
                 print(Fore.RESET)
 
     sftp.close()
-    print("Deployment complete.")
+
+    now = datetime.datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+    print("Deployment complete at", current_time)

@@ -10,6 +10,7 @@ import paramiko
 import socket
 import argparse
 import xml.etree.ElementTree as ET
+import pyfiglet
 
 import b9py
 
@@ -336,7 +337,7 @@ def parameter_node(element: ET.Element):
 
 
 if __name__ == "__main__":
-    print("B9 Broker")
+    print(pyfiglet.figlet_format("B9 Broker"))
 
     # Control-C handler
     signal.signal(signal.SIGINT, shutdown_handler)

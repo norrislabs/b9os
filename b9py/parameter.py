@@ -1,3 +1,4 @@
+from distutils.util import strtobool
 import b9py
 
 
@@ -83,6 +84,20 @@ class Parameter(object):
                                                          self._broker_uri if self._port else None,
                                                          self._broker_uri if self._port is None else None)
         return result
+
+    @staticmethod
+    def parameter2type(param_result):
+        reg = param_result.result_data.data
+        if reg['found']:
+            if reg['type'].lower() == 'int':
+                return int(reg['value'])
+            elif reg['type'].lower() == 'float':
+                return float(reg['value'])
+            elif reg['type'].lower() == 'bool':
+                return bool(strtobool(reg['value']))
+            else:
+                return reg['value']
+        return None
 
     @staticmethod
     def _type_string(value):

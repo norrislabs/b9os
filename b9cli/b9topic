@@ -106,7 +106,10 @@ def echo_text_cb(_topic, message: b9py.Message):
             print(end="\r\n")
 
     else:
-        print("Echo - {}".format(message), end="\r\n")
+        if args['data_only']:
+            print(message.data, end="\r\n")
+        else:
+            print("Echo - {}".format(message), end="\r\n")
 
 
 def _average(lst):
@@ -276,6 +279,7 @@ if __name__ == "__main__":
     parser_echo.add_argument('-r', '--rate', type=float, default=-1, help='enable rate mode in hertz.')
     parser_echo.add_argument('-q', '--queue_size', type=int, default=-1, help='set queue size.')
     parser_echo.add_argument("-l", "--latency", action="store_true", help="display latency numbers.")
+    parser_echo.add_argument("-d", "--data_only", action="store_true", help="display message data only.")
 
     #  subparser for hz
     parser_hz = subparsers.add_parser('hz')

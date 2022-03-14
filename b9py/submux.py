@@ -85,6 +85,11 @@ class SubscriberMultiplexer(object):
 
         return priority_callback
 
+    def publish_sync_msg(self, msg_data, priority_name):
+        if self.has_synchronization_publisher:
+            sync_msg = b9py.MessageFactory.create_message_submux_sync(msg_data, -1, priority_name)
+            self._synchro_pub.publish(sync_msg)
+
     @property
     def topic(self):
         return self._topic

@@ -158,7 +158,7 @@ class MessageFactory(object):
     @staticmethod
     def create_message_submux_sync(msg_data, priority_number, priority_name='', source=None):
         return Message(Message.MSGTYPE_SUBMUX_SYNC, {'priority_number': priority_number,
-                                                     'priority_name:': priority_name,
+                                                     'priority_name': priority_name,
                                                      'message_data': msg_data}, source)
 
     @staticmethod
@@ -199,12 +199,12 @@ class MessageFactory(object):
         return Message(Message.MSGTYPE_POINTCLOUD, points, source)
 
     @staticmethod
-    def create_message_obstacle_map(robot_width, robot_length, lidar_offset, lidar_height, points, source=None):
+    def create_message_obstacle_map(robot_width, robot_length, lidar_offset, points, source=None):
         assert (isinstance(points, list) and
                 all(isinstance(item, tuple) for item in points))
         return Message(Message.MSGTYPE_OBSTACLEMAP,
                        {'robot_width': robot_width, 'robot_length': robot_length,
-                        'lidar_offset': lidar_offset, 'lidar_height': lidar_height,
+                        'lidar_offset': lidar_offset,
                         'points': points},
                        source)
 

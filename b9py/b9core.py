@@ -64,6 +64,20 @@ class B9(object):
                                                                                    result.status_type)
 
     @staticmethod
+    def prepend_namespace(namespace, topic):
+        if namespace:
+            if namespace == '/':
+                # Topic is in the bare root namespace
+                return namespace + topic.strip('/')
+            else:
+                # Topic is in root specified namespace
+                _namespace = namespace.strip('/')
+                return '/' + _namespace + '/' + topic.strip('/')
+        else:
+            # No namespace - use topic as is
+            return topic
+
+    @staticmethod
     def get_ip_hostname():
         ip_list = []
         # Get all the IPs of this machine
