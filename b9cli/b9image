@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+
+import os
+import signal
+import b9py
+import argparse
+import logging
+import threading
+import numpy as np
+from colorama import Fore
+import pyfiglet
+
+# noinspection PyPackageRequirements
+import cv2
+
+_subscribers = {}
+_horz_position = 0
+
+
+def sigint_handler(_signum, _frame):
+    print('\nCtrl-C shutdown.', end="\r\n")
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def failed(result):
+    print("Registration service has failed. {}".format(result.status_type), end="\r\n")
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def _average(lst):
+    return round(sum(lst) / len(lst), 1)
+
+
+def image_setup(itopic):
+    global _subscribers
+    global _horz_position
+
+    def echo_image_cb(topic, message: b9py.Message):
+        global _subscribers
+        global _horz_position
+
+        buff = np.frombuffer(message.data, np.uint8)
+        img = cv2.imdecode(buff, cv2.IMREAD_COLOR)
+
+        cv2.imshow(topic, img)
+
+        # Weird timing shit when positioning windows
+        # That's why we are doing it every time.
+        _, x = _subscribers[topic]
+        cv2.moveWindow(topic, x, 220)
+
+        key = cv2.waitKey(1)
+        if key == 27:
+            _running = False
+            print('\nCanceled by user.', end="\r\n")
+            os.kill(os.getpid(), signal.SIGKILL)
+
+    # Create cv window to display image
+    cv2.namedWindow(itopic, cv2.WINDOW_AUTOSIZE)
+
+    # Subscribe
+    isub = b9.create_subscriber(itopic, echo_image_cb, None, args['rate'], args['queue_size'])
+    _subscribers[itopic] = isub, _horz_position
+    _horz_position += 730
+
+
+if __name__ == "__main__":
+    print(pyfiglet.figlet_format("B9 Image"))
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("topic", help="subscribe to this topic.")
+    ap.add_argument('-r', '--rate', type=float, default=-1, help='enable rate mode in hertz.')
+    ap.add_argument('-q', '--queue_size', type=int, default=-1, help='set queue size.')
+    ap.add_argument("-c", "--camera", action="store_true", help="show cameras in addition.")
+
+    args = vars(ap.parse_args())
+
+    # Get the broker's address
+    broker_uri = os.environ.get('B9_BROKER')
+    if broker_uri is None:
+        broker_uri = 'localhost'
+        print("B9 broker URI was not specified. Using localhost.", end="\r\n")
+
+    # Init B9 core
+    b9 = b9py.B9('b9topic_cli', broker_uri)
+    b9.start_logger(level=logging.DEBUG)
+    print(end="\r\n")
+
+    client = b9py.ServiceClient('b9topic', None, 'broker/registration/topic', None, 5555, broker_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        _image_lock = threading.Lock()
+        if args['topic'] == "all":
+            # Show all images
+            r = client.call_service(b9py.MessageFactory.create_topic_list_message('pub'))
+            if not r.is_successful:
+                failed(r)
+            else:
+                items = r.result_data.data.items()
+                sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+                for item in sorted_topics:
+                    regspecs = dict(items)[item]
+                    for regspec in regspecs:
+                        if regspec['message_type'] == b9py.Message.MSGTYPE_IMAGE:
+                            if args['camera']:
+                                image_setup(regspec['topic'])
+                            elif regspec['topic'].find('camera') == -1:
+                                image_setup(regspec['topic'])
+        else:
+            # Show only the specified image
+            r = client.call_service(b9py.MessageFactory.create_topic_lookup_message(args['topic']))
+            if not r.is_successful:
+                failed(r)
+            else:
+                reg = r.result_data.data
+                if reg['found']:
+                    if reg['message_type'] == b9py.Message.MSGTYPE_IMAGE:
+                        image_setup(args['topic'])
+                        print("Subscribed to image '{}'...\n".format(args['topic']), end="\r\n")
+                    else:
+                        print(Fore.RED + " '{}' is not an image topic.\n".format(args['topic']), end="\r\n")
+                        print(Fore.RESET)
+                else:
+                    print(Fore.RED + "Unknown topic '{}'.\n".format(args['topic']), end="\r\n")
+                    print(Fore.RESET)
+
+    signal.signal(signal.SIGINT, sigint_handler)
+    b9.spin_forever()
