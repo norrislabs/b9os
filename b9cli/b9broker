@@ -149,10 +149,13 @@ def topic_registration_cb(_request_topic, message: b9py.Message):
 
         if message.data['sub_cmd'].lower() == 'pub':
             db_put(dbPub, "Publisher", topic, reg_entry)
+
         elif message.data['sub_cmd'].lower() == 'sub':
             reg_entry['has_publisher'] = message.data['has_publisher']
             db_put_multi(dbSub, "Subscriber", topic, reg_entry)
+
         elif message.data['sub_cmd'].lower() == 'srv':
+            reg_entry['ret_msg_type'] = message.data['ret_msg_type']
             db_put(dbSrv, "Service", topic, reg_entry)
 
     # Unregister a topic

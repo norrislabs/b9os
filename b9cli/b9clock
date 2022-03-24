@@ -56,7 +56,8 @@ if __name__ == "__main__":
 
     print("B9 OS version: {}".format(b9py.__version__), end="\r\n")
 
-    client = b9py.ServiceClient('b9node', None, 'broker/registration/node', None, 5557, broker_uri)
+    client = b9py.ServiceClient('b9node', None, 'broker/registration/node',
+                                None, 5557, broker_uri)
     stat = client.connect()
     if stat.is_successful:
         # Get node list

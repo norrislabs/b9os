@@ -7,13 +7,15 @@ import b9py
 
 
 class Service(object):
-    def __init__(self, node_name, broker_uri, topic, message_type, callback, namespace, port,
-                 this_host_ip, this_host_name):
+    def __init__(self, node_name, broker_uri, topic, call_msg_type, callback, namespace, port,
+                 this_host_ip, this_host_name, ret_msg_type=b9py.message.Message.MSGTYPE_ANY):
         self._node_name = node_name
         self._broker_uri = broker_uri
         self._is_broker = self._node_name.lower() == "broker"
 
-        self._message_type = message_type
+        self._call_msg_type = call_msg_type
+        self._ret_msg_type = ret_msg_type
+
         self._callback = callback
         self._this_host_ip = this_host_ip
         self._this_host_name = this_host_name
@@ -74,7 +76,8 @@ class Service(object):
     def _create_srv_reg_message(self):
         return b9py.Message(b9py.Message.MSGTYPE_TOPIC_REGISTRATION, {'cmd': 'REGISTER', 'sub_cmd': 'SRV',
                                                                       'topic': self._topic,
-                                                                      'message_type': self._message_type,
+                                                                      'message_type': self._call_msg_type,
+                                                                      'ret_msg_type': self._ret_msg_type,
                                                                       'nodename': self._node_name,
                                                                       'IP': self._this_host_ip, 'port': self._port,
                                                                       'this_ip': self._this_host_ip,
@@ -107,17 +110,27 @@ class Service(object):
                 [request_topic, msg_data] = await self._rep_sock.recv_multipart()
                 request = b9py.Message.unpack(msg_data)
 
-                if self._message_type is not None and request.message_type != self._message_type:
+                if self._call_msg_type is not None and request.message_type != self._call_msg_type:
                     err_msg = "'{}' on node '{}'. Incoming {} != {}. {}".format(self._service_name,
                                                                                 self._node_name,
                                                                                 request.message_type,
-                                                                                self._message_type,
+                                                                                self._call_msg_type,
                                                                                 b9py.B9Status.ERR_WRONG_MESSAGE)
                     logging.error(err_msg)
                     response = b9py.MessageFactory.create_message_error(err_msg, self._service_name)
                 else:
                     # Pass the request to specified callback
                     response = self._callback(request_topic.decode('utf-8'), request)
+
+                    # Make sure the callback return message is the right type
+                    if self._ret_msg_type is not None and response.message_type != self._ret_msg_type:
+                        err_msg = "'{}' on node '{}'. Return {} != {}. {}".format(self._service_name,
+                                                                                  self._node_name,
+                                                                                  response.message_type,
+                                                                                  self._ret_msg_type,
+                                                                                  b9py.B9Status.ERR_WRONG_MESSAGE)
+                        logging.error(err_msg)
+                        response = b9py.MessageFactory.create_message_error(err_msg, self._service_name)
 
                 # Return the callback's response to requestor
                 response.source = self._service_name
@@ -143,16 +156,18 @@ class ServiceClient(object):
                 self._namespace = namespace.strip('/')
                 self._topic = '/' + self._namespace + '/' + topic.strip('/')
         else:
+            # Namespace must be in the topic or not using a namespace
             self._topic = topic
 
         self._srv_host = srv_host
         self._srv_port = srv_port
         self._srv_uri = None
+        self._ret_msg_type = b9py.message.Message.MSGTYPE_ANY
 
         self._srv_client_name = "SCL-{}-{}-{}".format(self._node_name, self._topic,
                                                       str(uuid.uuid1()).split('-')[0])
 
-        self._service_call_timeout = 10     # seconds
+        self._service_call_timeout = 10  # seconds
         self._max_retry = 3
         self._ctx = zmq.asyncio.Context()
         self._req_sock = self._ctx.socket(zmq.REQ)
@@ -260,7 +275,18 @@ class ServiceClient(object):
         for retry in range(self._max_retry + 1):
             try:
                 result = loop.run_until_complete(self._call_service(request))
-                return result
+
+                # Make return message types match
+                if self._ret_msg_type != b9py.Message.MSGTYPE_ANY and \
+                        self._ret_msg_type != result.result_data.message_type:
+                    err_msg = "Service '{}' in node '{}' return value does not match message type. {} != {}" \
+                        .format(self._topic, self._node_name,
+                                self._ret_msg_type,
+                                result.result_data.data['message_type'])
+                    logging.error(err_msg)
+                    return b9py.B9Status.failed_status(b9py.B9Status.ERR_WRONG_MESSAGE, err_msg, result.result_data)
+                else:
+                    return result
 
             except asyncio.TimeoutError:
                 if retry < self._max_retry:
@@ -275,7 +301,7 @@ class ServiceClient(object):
             except asyncio.CancelledError:
                 return b9py.B9Status.failed_status(b9py.B9Status.ERR_CANCELED)
 
-    async def _call_service(self, request_msg):
+    async def _call_service(self, request_msg) -> b9py.B9Status:
         # Send request
         await self._req_sock.send_multipart([self._topic.encode('utf-8'), request_msg.pack()])
 
@@ -288,7 +314,8 @@ class ServiceClient(object):
 
     @staticmethod
     def oneshot_service_call(nodename, topic, namespace, request, srv_port=None, srv_host=None, broker_uri=None):
-        client = b9py.ServiceClient(nodename, broker_uri, topic, namespace, srv_port, srv_host)
+        client = b9py.ServiceClient(nodename, broker_uri, topic,
+                                    namespace, srv_port, srv_host)
         result = client.connect()
         if result.is_successful:
             sc_result = client.call_service(request)

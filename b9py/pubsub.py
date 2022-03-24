@@ -341,8 +341,8 @@ class Publisher(object):
 
 
 class Subscriber(object):
-    def __init__(self, nodename, broker_uri, topic, callback, namespace, rate, queue_size,
-                 this_host_ip, this_host_name, pub_port, pub_host):
+    def __init__(self, nodename, broker_uri, topic, message_type, callback, namespace, rate, queue_size,
+                 this_host_ip, this_host_name):
         self._node_name = nodename
         self._callback = callback
 
@@ -363,10 +363,8 @@ class Subscriber(object):
         self._this_host_name = this_host_name
 
         self._broker_uri = broker_uri
-        self._pub_host = pub_host
-        self._pub_port = pub_port
         self._pub_uri = None
-        self._message_type = None
+        self._message_type = message_type
 
         self._sub_name = "SUB-{}-{}-{}".format(self._node_name,
                                                self._topic,
@@ -378,15 +376,10 @@ class Subscriber(object):
         self._task_sub = None
         self._task_msg = None
 
-        # Use localhost if publisher host not specified
-        if self._pub_host is None:
-            self._pub_host = "localhost"
-
         # Incoming message queue
         self._queue = asyncio.Queue(maxsize=queue_size)
 
-    def _register_subscriber(self, has_publisher=False, msg_type=b9py.Message.MSGTYPE_NULL,
-                             pub_ip='', pub_port=''):
+    def _register_subscriber(self, has_publisher, msg_type, pub_ip='', pub_port=''):
         sub_reg_msg = b9py.Message(b9py.Message.MSGTYPE_TOPIC_REGISTRATION,
                                    {'cmd': 'REGISTER', 'sub_cmd': 'SUB',
                                     'topic': self._topic,
@@ -410,73 +403,68 @@ class Subscriber(object):
     def subscribe(self, quiet=False):
         self._sub_sock = self._ctx.socket(zmq.SUB)
         self._sub_sock.setsockopt_string(zmq.SUBSCRIBE, self._topic)
+        result = b9py.ServiceClient.oneshot_service_call(self._node_name,
+                                                         'broker/registration/topic',
+                                                         None,
+                                                         self._create_req_lookup_message(self._topic),
+                                                         5555, self._broker_uri)
+        if result.is_successful:
+            # Get the publisher's URI so we can connect
+            if result.result_data.data['found']:
+                # We have a publisher!
+                self._pub_uri = "tcp://{}:{}".format(result.result_data.data['IP'],
+                                                     result.result_data.data['port'])
 
-        # Use port if specified
-        if self._pub_port is not None:
-            self._pub_uri = "tcp://{}:{}".format(self._pub_host, self._pub_port)
-        else:
-            # Otherwise, lookup the publisher's URI using the topic
-            if self._broker_uri is not None:
-                result = b9py.ServiceClient.oneshot_service_call(self._node_name,
-                                                                 'broker/registration/topic',
-                                                                 None,
-                                                                 self._create_req_lookup_message(self._topic),
-                                                                 5555, self._broker_uri)
-                if result.is_successful:
-                    # Set the publisher's URI so we can connect
-                    if result.result_data.data['found']:
-                        # We have a publisher!
-                        self._pub_uri = "tcp://{}:{}".format(result.result_data.data['IP'],
-                                                             result.result_data.data['port'])
-                        self._message_type = result.result_data.data['message_type']
+                # Make sure the publisher and subscriber message types match
+                if self._message_type != b9py.Message.MSGTYPE_ANY and \
+                        self._message_type != result.result_data.data['message_type']:
+                    err_msg = "Subscriber of '{}' in node '{}' does not match publisher's message type. {} != {}" \
+                        .format(self._topic, self._node_name,
+                                self._message_type,
+                                result.result_data.data['message_type'])
+                    logging.error(err_msg)
+                    return b9py.B9Status.failed_status(b9py.B9Status.ERR_WRONG_MESSAGE, err_msg)
 
-                        reg_result = self._register_subscriber(True,
-                                                               result.result_data.data['message_type'],
-                                                               result.result_data.data['IP'],
-                                                               result.result_data.data['port'])
-                        if not reg_result.is_successful:
-                            # Subscription registration failed.
-                            err_msg = "Subscription registration for '{}' on node '{}' failed." \
-                                .format(self._topic,
-                                        self._node_name)
-                            logging.error(err_msg)
-                            return b9py.B9Status.failed_status(b9py.B9Status.FAILED, err_msg)
-                    else:
-                        # Unknown topic, no publisher for this topic registered with broker
-                        # Show a local error message
-                        err_msg = "'{}' on node '{}' failed. Topic '{}' {}".format(self._sub_name,
-                                                                                   self._node_name,
-                                                                                   self._topic,
-                                                                                   b9py.B9Status.ERR_TOPIC_NOTFOUND)
-                        if not quiet:
-                            logging.warning(err_msg)
-
-                        # Register this subscriber which does not have a publisher
-                        reg_result = self._register_subscriber(False)
-                        if not reg_result.is_successful:
-                            # Subscription registration failed.
-                            err_msg = "Subscription registration for '{}' on node '{}' failed." \
-                                .format(self._topic,
-                                        self._node_name)
-                            logging.error(err_msg)
-
-                        self._reset()
-                        return b9py.B9Status.failed_status(b9py.B9Status.ERR_TOPIC_NOTFOUND, err_msg)
-                else:
-                    # Lookup call failed
-                    self._reset()
-                    logging.error("Lookup '{}' on node '{}' failed. {}".format(self._sub_name,
-                                                                               self._node_name,
-                                                                               result.status_type))
-                    return result
+                # Register this subscriber
+                reg_result = self._register_subscriber(True,
+                                                       result.result_data.data['message_type'],
+                                                       result.result_data.data['IP'],
+                                                       result.result_data.data['port'])
+                if not reg_result.is_successful:
+                    # Subscription registration failed.
+                    err_msg = "Subscription registration for '{}' on node '{}' failed." \
+                        .format(self._topic,
+                                self._node_name)
+                    logging.error(err_msg)
+                    return b9py.B9Status.failed_status(b9py.B9Status.FAILED, err_msg)
             else:
-                # No broker, no ability to subscribe. Give up.
+                # Unknown topic, no publisher for this topic registered with broker
+                # Show a local error message
+                err_msg = "'{}' on node '{}' failed. Topic '{}' {}".format(self._sub_name,
+                                                                           self._node_name,
+                                                                           self._topic,
+                                                                           b9py.B9Status.ERR_TOPIC_NOTFOUND)
+                if not quiet:
+                    logging.warning(err_msg)
+
+                # Register this subscriber which does not have a publisher
+                reg_result = self._register_subscriber(False, self._message_type)
+                if not reg_result.is_successful:
+                    # Subscription registration failed.
+                    err_msg = "Subscription registration for '{}' on node '{}' failed." \
+                        .format(self._topic,
+                                self._node_name)
+                    logging.error(err_msg)
+
                 self._reset()
-                err_msg = "'{}' on node '{}' failed. {}".format(self._sub_name,
-                                                                self._node_name,
-                                                                b9py.B9Status.ERR_NOBROKER)
-                logging.error(err_msg)
-                return b9py.B9Status.failed_status(b9py.B9Status.ERR_NOBROKER, err_msg)
+                return b9py.B9Status.failed_status(b9py.B9Status.ERR_TOPIC_NOTFOUND, err_msg)
+        else:
+            # Lookup call failed
+            self._reset()
+            logging.error("Lookup '{}' on node '{}' failed. {}".format(self._sub_name,
+                                                                       self._node_name,
+                                                                       result.status_type))
+            return result
 
         # Connect to publisher
         self._sub_sock.connect(self._pub_uri)

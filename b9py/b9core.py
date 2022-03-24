@@ -259,20 +259,20 @@ class B9(object):
         # nodename, broker_uri, topic, message_type, namespace, rate, queue_size
         pub = b9py.Publisher(self._nodename, self._broker_uri,
                              topic, message_type, namespace,
-                             rate, queue_size, self._host_ip, self._hostname)
+                             rate, queue_size,
+                             self._host_ip, self._hostname)
         self._publishers.append(pub)
         print(Fore.CYAN + "Publisher in node '{}' for topic '{}' has been created.".format(self._nodename,
                                                                                            topic), end='')
         print(Fore.RESET)
         return pub
 
-    def create_subscriber(self, topic, callback, namespace=None, rate=-1, queue_size=-1, pub_port=None, pub_host=None):
-        # node_name, broker_uri, topic, callback, rate, queue_size, pub_port, pub_host
+    def create_subscriber(self, topic, callback, namespace=None, rate=-1, queue_size=-1,
+                          message_type=b9py.message.Message.MSGTYPE_ANY):
         sub = b9py.Subscriber(self._nodename, self._broker_uri,
-                              topic, callback, namespace,
+                              topic, message_type, callback, namespace,
                               rate, queue_size,
-                              self._host_ip, self._hostname,
-                              pub_port, pub_host,)
+                              self._host_ip, self._hostname)
         self._subscribers.append(sub)
         print(Fore.CYAN + "Subscriber in node '{}' for topic '{}' has been created.".format(self._nodename,
                                                                                             topic), end='')
@@ -288,11 +288,12 @@ class B9(object):
         print(Fore.RESET)
         return mux
 
-    def create_service(self, topic, message_type, callback, namespace=None, port=None):
+    def create_service(self, topic, call_msg_type, callback, namespace=None, port=None,
+                       ret_msg_type=b9py.message.Message.MSGTYPE_ANY):
         # node_name, broker_uri, topic, message_type, callback, port, this_host_ip
         srv = b9py.Service(self._nodename, self._broker_uri,
-                           topic, message_type,
-                           callback, namespace, port, self._host_ip, self._hostname)
+                           topic, call_msg_type,
+                           callback, namespace, port, self._host_ip, self._hostname, ret_msg_type)
         print(Fore.CYAN + "Service in node '{}' for topic '{}' has been created.".format(self._nodename,
                                                                                          topic), end='')
         print(Fore.RESET)
@@ -300,9 +301,8 @@ class B9(object):
 
     def create_service_client(self, topic, namespace=None, srv_port=None, srv_host=None):
         # node_name, broker_uri, topic, srv_port, srv_host
-        return b9py.ServiceClient(self._nodename, self._broker_uri,
-                                  topic, namespace,
-                                  srv_port, srv_host)
+        return b9py.ServiceClient(self._nodename, self._broker_uri, topic,
+                                  namespace, srv_port, srv_host)
 
     def create_parameter_client(self, nodename, namespace=None, parameter_topic=None):
         return b9py.Parameter(self.broker_uri, nodename, namespace, parameter_topic)

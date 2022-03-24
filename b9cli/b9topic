@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 import signal
-import b9py
 import argparse
 import logging
 import yaml
@@ -12,6 +12,9 @@ import threading
 import numpy as np
 from colorama import Fore
 import pprint
+import readline
+
+import b9py
 
 # noinspection PyPackageRequirements
 import cv2
@@ -23,6 +26,8 @@ _running = True
 _max_latency = 0
 _lat_avg_list = [0]
 _lat_avg_size = 10
+
+_topics = []
 
 
 class FPS:
@@ -85,31 +90,44 @@ def echo_text_cb(_topic, message: b9py.Message):
                 color = colors.pop()
                 assigned_colors[label] = color
 
-        print("Echo - {:20}{:34}{:10}{:5}{:12}{:12}{:8}{:5}{}{}{}"
-              .format(str(message.timestamp),
-                      message.source,
-                      message.data["detection_type"],
-                      str(message.data['score']),
-                      str(message.data['object_size']),
-                      str(message.data['object_center']),
-                      str(message.data['image_seq']),
-                      str(message.data['id']),
-                      color,
-                      message.data['label'],
-                      Fore.RESET))
+        if args['verbose']:
+            print("Echo - {:20}{:34}{:10}{:5}{:12}{:12}{:8}{:5}{}{}{}"
+                  .format(str(message.timestamp),
+                          message.source,
+                          message.data["detection_type"],
+                          str(message.data['score']),
+                          str(message.data['object_size']),
+                          str(message.data['object_center']),
+                          str(message.data['image_seq']),
+                          str(message.data['id']),
+                          color,
+                          message.data['label'],
+                          Fore.RESET))
+        else:
+            print("{:10}{:5}{:12}{:12}{:8}{:5}{}{}{}"
+                  .format(message.data["detection_type"],
+                          str(message.data['score']),
+                          str(message.data['object_size']),
+                          str(message.data['object_center']),
+                          str(message.data['image_seq']),
+                          str(message.data['id']),
+                          color,
+                          message.data['label'],
+                          Fore.RESET))
 
         # Extra News!
         if "extra_data" in message.data.keys() and message.data['extra_data'] is not None:
-            print("       Extra Data:", end="\r\n")
-            pp = pprint.PrettyPrinter(indent=10)
-            pp.pprint(message.data["extra_data"])
-            print(end="\r\n")
+            if args['extra_data']:
+                print("       Extra Data:", end="\r\n")
+                pp = pprint.PrettyPrinter(indent=10)
+                pp.pprint(message.data["extra_data"])
+                print(end="\r\n")
 
     else:
-        if args['data_only']:
-            print(message.data, end="\r\n")
-        else:
+        if args['verbose']:
             print("Echo - {}".format(message), end="\r\n")
+        else:
+            print(message.data, end="\r\n")
 
 
 def _average(lst):
@@ -166,6 +184,8 @@ def yaml_load(dinput):
 
 
 def print_registrations(regtype, items, nodename=None):
+    global _topics
+
     if regtype == 'pub':
         title = '------ Publishers '
     else:
@@ -183,12 +203,15 @@ def print_registrations(regtype, items, nodename=None):
                      'Node_Host'), end="\r\n")
     print('-' * 145)
 
+    _topics = []
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
         regspecs = dict(items)[item]
         for regspec in regspecs:
             if not (regspec['nodename'].endswith('_cli') and regtype == "sub"):
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    _topics.append(regspec['topic'])
+
                     if regspec['message_type'] is None:
                         msgtype = "Any"
                     else:
@@ -197,7 +220,6 @@ def print_registrations(regtype, items, nodename=None):
                     if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
                         ip = "-" * 14
                         the_port = "-" * 4
-                        msgtype = '-' * 14
                         color = Fore.YELLOW
                     else:
                         ip = regspec['IP']
@@ -214,6 +236,8 @@ def print_registrations(regtype, items, nodename=None):
 
 
 def print_registrations_simple(regtype, items, nodename=None):
+    global _topics
+
     if regtype == 'pub':
         title = '------ Publishers '
     else:
@@ -229,19 +253,21 @@ def print_registrations_simple(regtype, items, nodename=None):
                      'Node_Host'), end="\r\n")
     print('-' * 105)
 
+    _topics = []
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
         regspecs = dict(items)[item]
         for regspec in regspecs:
             if not (regspec['nodename'].endswith('_cli') and regtype == "sub"):
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    _topics.append(regspec['topic'])
+
                     if regspec['message_type'] is None:
                         msgtype = "Any"
                     else:
                         msgtype = regspec['message_type']
 
                     if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
-                        msgtype = '-' * 14
                         color = Fore.YELLOW
                     else:
                         color = Fore.RESET
@@ -251,6 +277,15 @@ def print_registrations_simple(regtype, items, nodename=None):
                                      msgtype,
                                      regspec['nodename'],
                                      regspec['owner_host']), end="\r\n")
+
+
+def completer(text, state):
+    global _topics
+    options = [i for i in _topics if i.startswith(text)]
+    if state < len(options):
+        return options[state]
+    else:
+        return None
 
 
 _fps = FPS()
@@ -274,12 +309,13 @@ if __name__ == "__main__":
 
     #  subparser for echo
     parser_echo = subparsers.add_parser('echo')
-    parser_echo.add_argument("topic", help="subscribe to this topic.")
+    parser_echo.add_argument("topic", type=str, default="?", nargs='?', help="subscribe to this topic.")
     parser_echo.add_argument('-n', '--count', type=int, default=-1, help='count messages and exit program.')
     parser_echo.add_argument('-r', '--rate', type=float, default=-1, help='enable rate mode in hertz.')
     parser_echo.add_argument('-q', '--queue_size', type=int, default=-1, help='set queue size.')
     parser_echo.add_argument("-l", "--latency", action="store_true", help="display latency numbers.")
-    parser_echo.add_argument("-d", "--data_only", action="store_true", help="display message data only.")
+    parser_echo.add_argument('-v', '--verbose', action='store_true', help='display in verbose mode')
+    parser_echo.add_argument('-x', '--extra_data', action='store_true', help='display in message extra data')
 
     #  subparser for hz
     parser_hz = subparsers.add_parser('hz')
@@ -314,8 +350,20 @@ if __name__ == "__main__":
     b9.start_logger(level=logging.DEBUG)
     print(end="\r\n")
 
+    if sys.platform == 'darwin':
+        # Apple uses libedit.
+        readline.parse_and_bind("bind -e")
+        readline.parse_and_bind("bind '\t' rl_complete")
+    else:
+        # Some tweaks for linux
+        readline.parse_and_bind('tab: complete')
+        readline.set_completer_delims(' \t\n`~!@#$%^&*()-=+[{]}\\|;:\'",<>?')
+
+    readline.set_completer(completer)
+
     # Execute the specified command
-    client = b9py.ServiceClient('b9topic', None, 'broker/registration/topic', None, 5555, broker_uri)
+    client = b9py.ServiceClient('b9topic', None, 'broker/registration/topic',
+                                None, 5555, broker_uri)
     stat = client.connect()
     if stat.is_successful:
         # List
@@ -344,28 +392,48 @@ if __name__ == "__main__":
 
         # Echo
         elif args['command'].lower() == 'echo':
+            topic = None
+            if args['topic'] == '?':
+                # Topic not specified - show published and get a topic from the user
+                r = client.call_service(b9py.MessageFactory.create_topic_list_message('pub'))
+                if not r.is_successful:
+                    failed(r)
+                else:
+                    if args['verbose']:
+                        print_registrations_simple('pub', r.result_data.data.items())
+                    else:
+                        print_registrations('pub', r.result_data.data.items())
+                topic = input("\ntopic: ")
+            else:
+                # Use the topic provided by the command line
+                topic = (args['topic'])
+
             # Lookup the message type
-            r = client.call_service(b9py.MessageFactory.create_topic_lookup_message(args['topic']))
+            r = client.call_service(b9py.MessageFactory.create_topic_lookup_message(topic))
             if not r.is_successful:
                 failed(r)
             else:
                 reg = r.result_data.data
-                cb = echo_text_cb
+                cb = None
                 if reg['found']:
                     if reg['message_type'] == b9py.Message.MSGTYPE_IMAGE:
-                        # Message is an image so show it in a window
+                        # Message is an image so show it in a cv window
                         image_lock = threading.Lock()
                         cv2.namedWindow(args['topic'], cv2.WINDOW_AUTOSIZE)
                         cb = echo_image_cb
+                    else:
+                        # Message is text so print them to the screen
+                        cb = echo_text_cb
                 else:
-                    print(Fore.RED + "Unknown topic '{}'...\n".format(args['topic']), end="\r\n")
+                    print(Fore.RED + "Unknown topic '{}'\n".format(topic), end="\r\n")
                     print(Fore.RESET)
 
-                # Subscribe
-                sub = b9.create_subscriber(args['topic'], cb, None, args['rate'], args['queue_size'])
-                print("Subscribed to '{}'...\n".format(args['topic']), end="\r\n")
-                signal.signal(signal.SIGINT, sigint_handler)
-                b9.spin_forever()
+                if cb:
+                    # Subscribe
+                    sub = b9.create_subscriber(topic, cb, None, args['rate'], args['queue_size'])
+                    print("Subscribed to '{}'\n".format(topic), end="\r\n")
+                    signal.signal(signal.SIGINT, sigint_handler)
+                    b9.spin_forever()
 
         # Hz
         elif args['command'].lower() == 'hz':

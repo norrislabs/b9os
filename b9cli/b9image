@@ -44,24 +44,24 @@ def image_setup(itopic):
 
         cv2.imshow(topic, img)
 
-        # Weird timing shit when positioning windows
-        # That's why we are doing it every time.
-        _, x = _subscribers[topic]
-        cv2.moveWindow(topic, x, 220)
-
         key = cv2.waitKey(1)
-        if key == 27:
-            _running = False
+        if key == 27 or key & 0xFF == ord('q'):
             print('\nCanceled by user.', end="\r\n")
             os.kill(os.getpid(), signal.SIGKILL)
+
+        elif key & 0xFF == ord('t'):
+            # Tile all the windows
+            x = 0
+            for tp in _subscribers.keys():
+                cv2.moveWindow(tp, x, 220)
+                x += 730
 
     # Create cv window to display image
     cv2.namedWindow(itopic, cv2.WINDOW_AUTOSIZE)
 
     # Subscribe
     isub = b9.create_subscriber(itopic, echo_image_cb, None, args['rate'], args['queue_size'])
-    _subscribers[itopic] = isub, _horz_position
-    _horz_position += 730
+    _subscribers[itopic] = isub
 
 
 if __name__ == "__main__":
@@ -89,7 +89,8 @@ if __name__ == "__main__":
     b9.start_logger(level=logging.DEBUG)
     print(end="\r\n")
 
-    client = b9py.ServiceClient('b9topic', None, 'broker/registration/topic', None, 5555, broker_uri)
+    client = b9py.ServiceClient('b9topic', None, 'broker/registration/topic',
+                                None, 5555, broker_uri)
     stat = client.connect()
     if stat.is_successful:
         _image_lock = threading.Lock()

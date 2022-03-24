@@ -26,15 +26,15 @@ def yaml_load(dinput):
 
 def print_registrations(items, nodename=None):
     title = '------ Services '
-    print('{}{}'.format(title, '-' * (140 - len(title))))
-    fmt = "{:45}{:16}{:16}{:8}{:30}{}"
+    print('{}{}'.format(title, '-' * (146 - len(title))))
+    fmt = "{:45}{:18}{:16}{:8}{:30}{}"
     print(fmt.format('Topic',
                      'Message_Type',
                      'IP',
                      'Port',
                      'Node_Name',
                      'Node_Host'), end="\r\n")
-    print('-' * 140)
+    print('-' * 146)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
@@ -46,8 +46,14 @@ def print_registrations(items, nodename=None):
                         msgtype = "Any"
                     else:
                         msgtype = regspec['message_type']
+
+                    if regspec['ret_msg_type'] is None:
+                        retmsgtype = "Any"
+                    else:
+                        retmsgtype = regspec['ret_msg_type']
+
                     print(fmt.format(regspec['topic'],
-                                     msgtype,
+                                     msgtype + '/' + retmsgtype,
                                      regspec['IP'],
                                      str(regspec['port']),
                                      regspec['nodename'],
@@ -56,13 +62,13 @@ def print_registrations(items, nodename=None):
 
 def print_registrations_simple(items, nodename=None):
     title = '------ Services '
-    print('{}{}'.format(title, '-' * (105 - len(title))))
-    fmt = "{:45}{:16}{:30}{}"
+    print('{}{}'.format(title, '-' * (108 - len(title))))
+    fmt = "{:45}{:18}{:30}{}"
     print(fmt.format('Topic',
                      'Message_Type',
                      'Node_Name',
                      'Node_Host'), end="\r\n")
-    print('-' * 105)
+    print('-' * 108)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
@@ -74,8 +80,14 @@ def print_registrations_simple(items, nodename=None):
                         msgtype = "Any"
                     else:
                         msgtype = regspec['message_type']
+
+                    if regspec['ret_msg_type'] is None:
+                        retmsgtype = "Any"
+                    else:
+                        retmsgtype = regspec['ret_msg_type']
+
                     print(fmt.format(regspec['topic'],
-                                     msgtype,
+                                     msgtype + '/' + retmsgtype,
                                      regspec['nodename'],
                                      regspec['owner_host']), end="\r\n")
 
@@ -125,7 +137,8 @@ if __name__ == "__main__":
     b9.start_logger(level=logging.INFO)
     print(end="\r\n")
 
-    client = b9py.ServiceClient('b9service', None, 'broker/registration/topic', None, 5555, broker_uri)
+    client = b9py.ServiceClient('b9service', None, 'broker/registration/topic',
+                                None, 5555, broker_uri)
     stat = client.connect()
     if stat.is_successful:
         # List

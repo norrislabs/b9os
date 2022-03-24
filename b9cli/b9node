@@ -83,7 +83,8 @@ if __name__ == "__main__":
     b9.start_logger(level=logging.INFO)
     print(end="\r\n")
 
-    client = b9py.ServiceClient('b9node', None, 'broker/registration/node', None, 5557, broker_uri)
+    client = b9py.ServiceClient('b9node', None, 'broker/registration/node',
+                                None, 5557, broker_uri)
     stat = client.connect()
     if stat.is_successful:
         # List
