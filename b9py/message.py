@@ -15,6 +15,7 @@ class Message(object):
 
     # Specialized message types
     MSGTYPE_DETECTION = 'Detection'
+    MSGTYPE_TARGETSPEC = 'TargetSpec'
     MSGTYPE_VECTOR3 = 'Vector3'
     MSGTYPE_TWIST = 'Twist'
     MSGTYPE_IMAGE = 'Image'
@@ -154,6 +155,13 @@ class MessageFactory(object):
     def create_message_detection(data, source=None):
         assert (isinstance(data, dict))
         return Message(Message.MSGTYPE_DETECTION, data, source)
+
+    @staticmethod
+    def create_message_target_spec(target_name, threshold=50, target_id=-1, extra_data=None, source=None):
+        return Message(Message.MSGTYPE_TARGETSPEC, {'target_name': target_name,
+                                                    'target_id': target_id,
+                                                    'threshold': threshold,
+                                                    'extra_data': extra_data}, source)
 
     @staticmethod
     def create_message_submux_sync(msg_data, priority_number, priority_name='', source=None):

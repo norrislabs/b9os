@@ -6,7 +6,15 @@ import signal
 import argparse
 from colorama import Fore
 
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.units import inch
+from reportlab.pdfgen.canvas import Canvas
+
 import b9py
+
+_pdf_canvas = None
+_pdf_pages = []
+_nocolor = False
 
 
 # Control-C handler
@@ -19,47 +27,97 @@ def failed(result):
     os.kill(os.getpid(), signal.SIGKILL)
 
 
+def pagebreak():
+    global _pdf_canvas
+    global _pdf_pages
+
+    if _pdf_canvas:
+        new_page()
+    else:
+        linefeed(2)
+
+
+def end_doc():
+    new_page(False)
+
+
+def new_page(create_new=True):
+    global _pdf_canvas
+    global _pdf_pages
+
+    if len(_pdf_pages) > 0:
+        prev_page = _pdf_pages[-1]
+        _pdf_canvas.drawText(prev_page)
+        _pdf_canvas.showPage()
+
+    if create_new:
+        next_page = _pdf_canvas.beginText()
+
+        next_page.setTextOrigin((8.0 * inch) / 2, 0.25 * inch)
+        next_page.setFont("Courier", 6)
+        next_page.textLine("Page: {}".format(len(_pdf_pages) + 1))
+
+        print("Page: {}".format(len(_pdf_pages) + 1))
+
+        next_page.setTextOrigin(0.25 * inch, 10.75 * inch)
+        next_page.setFont("Courier", 9)
+        _pdf_pages.append(next_page)
+
+
+def output(text):
+    global _pdf_canvas
+    global _pdf_pages
+
+    if _pdf_canvas:
+        current_page = _pdf_pages[-1]
+        current_page.textLine(text)
+    else:
+        print(text, end="\r\n")
+
+
+def linefeed(count=1):
+    for ff in range(count):
+        output("")
+
+
 def print_node_registrations(items):
     title = '------ Nodes '
-    print('{}{}'.format(title, '-' * (145 - len(title))))
+    output('{}{}'.format(title, '-' * (145 - len(title))))
     fmt = "{:42}{:16}{:16}{:8}"
-    print(fmt.format('Name',
-                     'Host',
-                     'IP',
-                     'PID'), end="\r\n")
-    print('-' * 145)
+    output(fmt.format('Name',
+                      'Host',
+                      'IP',
+                      'PID'))
+    output('-' * 145)
 
     sorted_nodes = dict(sorted(items, key=lambda i: (i[1][0]['host'], i[1][0]['nodename'])))
     last_host = None
     for item in sorted_nodes:
         regspec = dict(items)[item][0]
         if last_host and regspec['host'] != last_host:
-            print(end="\r\n")
-        print(fmt.format(regspec['nodename'],
-                         regspec['host'],
-                         str(regspec['IP']),
-                         str(regspec['pid'])),
-              end="\r\n")
+            linefeed(1)
+        output(fmt.format(regspec['nodename'],
+                          regspec['host'],
+                          str(regspec['IP']),
+                          str(regspec['pid'])))
         last_host = regspec['host']
 
 
 def print_node_registrations_simple(items):
     title = '------ Nodes '
-    print('{}{}'.format(title, '-' * (105 - len(title))))
+    output('{}{}'.format(title, '-' * (105 - len(title))))
     fmt = "{:42}{:16}"
-    print(fmt.format('Name',
-                     'Host'), end="\r\n")
-    print('-' * 105)
+    output(fmt.format('Name', 'Host'))
+    output('-' * 105)
 
     sorted_nodes = dict(sorted(items, key=lambda i: (i[1][0]['host'], i[1][0]['nodename'])))
     last_host = None
     for item in sorted_nodes:
         regspec = dict(items)[item][0]
         if last_host and regspec['host'] != last_host:
-            print(end="\r\n")
-        print(fmt.format(regspec['nodename'],
-                         regspec['host']),
-              end="\r\n")
+            linefeed(1)
+        output(fmt.format(regspec['nodename'],
+                          regspec['host']))
         last_host = regspec['host']
 
 
@@ -69,28 +127,30 @@ def print_topic_registrations(regtype, items, nodename=None):
     else:
         title = '------ Subscribers '
 
-    if args['nocolor']:
+    if _nocolor:
         color = ''
     else:
         color = Fore.RESET
 
-    print('{}{}'.format(title, '-' * (145 - len(title))))
+    output('{}{}'.format(title, '-' * (145 - len(title))))
     fmt = "{}{:42}{:16}{:16}{:8}{:34}{}" + color
-    print(fmt.format(color,
-                     'Topic',
-                     'Message_Type',
-                     'IP',
-                     'Port',
-                     'Node_Name',
-                     'Node_Host'), end="\r\n")
-    print('-' * 145)
+    output(fmt.format(color,
+                      'Topic',
+                      'Message_Type',
+                      'IP',
+                      'Port',
+                      'Node_Name',
+                      'Node_Host'))
+    output('-' * 145)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    topic_count = 0
     for item in sorted_topics:
         regspecs = dict(items)[item]
         for regspec in regspecs:
             if not (regspec['nodename'].endswith('_cli') and regtype == "sub"):
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    topic_count += 1
                     if regspec['message_type'] is None:
                         msgtype = "Any"
                     else:
@@ -99,21 +159,26 @@ def print_topic_registrations(regtype, items, nodename=None):
                     if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
                         ip = "-" * 14
                         the_port = "-" * 4
-                        if not args['nocolor']:
+                        if not _nocolor:
                             color = Fore.YELLOW
                     else:
                         ip = regspec['IP']
                         the_port = str(regspec['port'])
-                        if not args['nocolor']:
+                        if not _nocolor:
                             color = Fore.RESET
 
-                    print(fmt.format(color,
-                                     regspec['topic'],
-                                     msgtype,
-                                     ip,
-                                     the_port,
-                                     regspec['nodename'],
-                                     regspec['owner_host'] + "/" + regspec['owner_ip']), end="\r\n")
+                    output(fmt.format(color,
+                                      regspec['topic'],
+                                      msgtype,
+                                      ip,
+                                      the_port,
+                                      regspec['nodename'],
+                                      regspec['owner_host'] + "/" + regspec['owner_ip']))
+    if topic_count == 0:
+        if regtype == 'pub':
+            output("No publishers provided by this node.")
+        else:
+            output("No subscribers for this node.")
 
 
 def print_topic_registrations_simple(regtype, items, nodename=None):
@@ -122,56 +187,63 @@ def print_topic_registrations_simple(regtype, items, nodename=None):
     else:
         title = '------ Subscribers '
 
-    if args['nocolor']:
+    if _nocolor:
         color = ''
     else:
         color = Fore.RESET
 
-    print('{}{}'.format(title, '-' * (105 - len(title))))
+    output('{}{}'.format(title, '-' * (105 - len(title))))
     fmt = "{}{:42}{:16}{:34}{}" + color
-    print(fmt.format(color,
-                     'Topic',
-                     'Message_Type',
-                     'Node_Name',
-                     'Node_Host'), end="\r\n")
-    print('-' * 105)
+    output(fmt.format(color,
+                      'Topic',
+                      'Message_Type',
+                      'Node_Name',
+                      'Node_Host'))
+    output('-' * 105)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    topic_count = 0
     for item in sorted_topics:
         regspecs = dict(items)[item]
         for regspec in regspecs:
             if not (regspec['nodename'].endswith('_cli') and regtype == "sub"):
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    topic_count += 1
                     if regspec['message_type'] is None:
                         msgtype = "Any"
                     else:
                         msgtype = regspec['message_type']
 
                     if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
-                        if not args['nocolor']:
+                        if not _nocolor:
                             color = Fore.YELLOW
                     else:
-                        if not args['nocolor']:
+                        if not _nocolor:
                             color = Fore.RESET
 
-                    print(fmt.format(color,
-                                     regspec['topic'],
-                                     msgtype,
-                                     regspec['nodename'],
-                                     regspec['owner_host']), end="\r\n")
+                    output(fmt.format(color,
+                                      regspec['topic'],
+                                      msgtype,
+                                      regspec['nodename'],
+                                      regspec['owner_host']))
+    if topic_count == 0:
+        if regtype == 'pub':
+            output("No publishers provided by this node.")
+        else:
+            output("No subscribers for this node.")
 
 
 def print_service_registrations(items, nodename=None):
     title = '------ Services '
-    print('{}{}'.format(title, '-' * (146 - len(title))))
+    output('{}{}'.format(title, '-' * (146 - len(title))))
     fmt = "{:42}{:18}{:16}{:8}{:34}{}"
-    print(fmt.format('Topic',
-                     'Message_Type',
-                     'IP',
-                     'Port',
-                     'Node_Name',
-                     'Node_Host'), end="\r\n")
-    print('-' * 146)
+    output(fmt.format('Topic',
+                      'Message_Type',
+                      'IP',
+                      'Port',
+                      'Node_Name',
+                      'Node_Host'))
+    output('-' * 146)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     srv_count = 0
@@ -191,25 +263,25 @@ def print_service_registrations(items, nodename=None):
                     else:
                         retmsgtype = regspec['ret_msg_type']
 
-                    print(fmt.format(regspec['topic'],
-                                     msgtype + "/" + retmsgtype,
-                                     regspec['IP'],
-                                     str(regspec['port']),
-                                     regspec['nodename'],
-                                     regspec['owner_host'] + "/" + regspec['owner_ip']), end="\r\n")
+                    output(fmt.format(regspec['topic'],
+                                      msgtype + "/" + retmsgtype,
+                                      regspec['IP'],
+                                      str(regspec['port']),
+                                      regspec['nodename'],
+                                      regspec['owner_host'] + "/" + regspec['owner_ip']))
     if srv_count == 0:
-        print("No services provided by this node.", end="\r\n")
+        output("No services provided by this node.")
 
 
 def print_service_registrations_simple(items, nodename=None):
     title = '------ Services '
-    print('{}{}'.format(title, '-' * (108 - len(title))))
-    fmt = "{:42}{:18}{:34}{}"
-    print(fmt.format('Topic',
-                     'Message_Type',
-                     'Node_Name',
-                     'Node_Host'), end="\r\n")
-    print('-' * 108)
+    output('{}{}'.format(title, '-' * (105 - len(title))))
+    fmt = "{:42}{:18}{:31}{}"
+    output(fmt.format('Topic',
+                      'Message_Type',
+                      'Node_Name',
+                      'Node_Host'))
+    output('-' * 105)
 
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     srv_count = 0
@@ -229,36 +301,36 @@ def print_service_registrations_simple(items, nodename=None):
                     else:
                         retmsgtype = regspec['ret_msg_type']
 
-                    print(fmt.format(regspec['topic'],
-                                     msgtype + '/' + retmsgtype,
-                                     regspec['nodename'],
-                                     regspec['owner_host']), end="\r\n")
+                    output(fmt.format(regspec['topic'],
+                                      msgtype + '/' + retmsgtype,
+                                      regspec['nodename'],
+                                      regspec['owner_host']))
     if srv_count == 0:
-        print("No services provided by this node.", end="\r\n")
+        output("No services provided by this node.")
 
 
-def print_parameters(title, items):
-    width = 145 if args['verbose'] else 105
+def print_parameters(title, items, verbose):
+    width = 145 if verbose else 105
     title = '------ Parameters in ' + title + " "
-    print('{}{}'.format(title, '-' * (width - len(title))))
+    output('{}{}'.format(title, '-' * (width - len(title))))
     fmt = "{:42}{:16}{:28}{}"
-    print(fmt.format('Namespace',
-                     'Type',
-                     'Name',
-                     'Value'), end="\r\n")
-    print('-' * width)
+    output(fmt.format('Namespace',
+                      'Type',
+                      'Name',
+                      'Value'))
+    output('-' * width)
 
     for reg in items:
-        print(fmt.format(reg['namespace'], reg['type'], reg['name'], reg['value']), end="\r\n")
+        output(fmt.format(reg['namespace'], reg['type'], reg['name'], reg['value']))
 
 
-def print_parameter_server(title, parameter_topic=None):
+def print_parameter_server(title, verbose, parameter_topic=None):
     param_client = b9.create_parameter_client(b9.nodename, '@', parameter_topic)
     r = param_client.list()
     if not r.is_successful:
         failed(r)
     else:
-        print_parameters(title, r.result_data.data)
+        print_parameters(title, r.result_data.data, verbose)
 
 
 def get_node_list():
@@ -289,45 +361,44 @@ def get_services_list():
             return r.result_data.data.items()
 
 
-def document(verbose, by_nodename):
-    # List nodes
-    if not by_nodename:
+def document(verbose, by_nodename, last_page=False):
+    if by_nodename:
+        if verbose:
+            length = 145
+        else:
+            length = 105
+
+        if _pdf_canvas is None:
+            linefeed(1)
+            output('~' * length)
+
+        header = "Topics/Services for node '{}'".format(by_nodename)
+        output("{}{}".format(' ' * int(length / 2 - len(header) / 2), header))
+        linefeed(1)
+    else:
+        # List nodes
         node_list = get_node_list()
         if node_list:
             if verbose:
                 print_node_registrations(node_list)
             else:
                 print_node_registrations_simple(node_list)
-            print(end="\r\n")
-            print(end="\r\n")
+            pagebreak()
         else:
             os.kill(os.getpid(), signal.SIGKILL)
-    else:
-        print(end="\r\n")
-        if verbose:
-            length = 145
-        else:
-            length = 105
-        print('~' * length)
-
-        header = "Topics/Services for node '{}'".format(by_nodename)
-        print("{}{}".format(' ' * int(length / 2 - len(header) / 2), header), end="\r\n")
-        print(end="\r\n")
 
     # List broker parameters
     if by_nodename is None:
-        print_parameter_server("Broker", None)
-        print(end="\r\n")
-        print(end="\r\n")
+        print_parameter_server("Broker", verbose, None)
+        pagebreak()
 
         # Look for parameter servers and list out their parameters
         srvs = get_services_list()
         for srv in srvs:
             spec = srv[1][0]
             if spec['message_type'] == 'Parameter':
-                print_parameter_server(spec['nodename'], spec['topic'])
-                print(end="\r\n")
-                print(end="\r\n")
+                print_parameter_server(spec['nodename'], verbose, spec['topic'])
+                pagebreak()
 
     # List topics
     client = b9py.ServiceClient('b9topic', None, 'broker/registration/topic',
@@ -342,8 +413,10 @@ def document(verbose, by_nodename):
                 print_topic_registrations('pub', r.result_data.data.items(), by_nodename)
             else:
                 print_topic_registrations_simple('pub', r.result_data.data.items(), by_nodename)
-        print(end="\r\n")
-        print(end="\r\n")
+        if by_nodename is None:
+            pagebreak()
+        else:
+            linefeed(2)
 
         r = client.call_service(b9py.MessageFactory.create_topic_list_message('sub'))
         if not r.is_successful:
@@ -355,8 +428,10 @@ def document(verbose, by_nodename):
                 print_topic_registrations_simple('sub', r.result_data.data.items(), by_nodename)
 
         client.close()
-        print(end="\r\n")
-        print(end="\r\n")
+        if by_nodename is None:
+            pagebreak()
+        else:
+            linefeed(2)
 
     # List services
     srv_list = get_services_list()
@@ -365,12 +440,10 @@ def document(verbose, by_nodename):
             print_service_registrations(srv_list, by_nodename)
         else:
             print_service_registrations_simple(srv_list, by_nodename)
-        print(end="\r\n")
-        print(end="\r\n")
 
-    # Page break (formfeed)
-    if by_nodename and args['pagebreak']:
-        print("{}".format('\x0c'), end='')
+    if by_nodename is not None:
+        if not last_page:
+            pagebreak()
 
 
 if __name__ == "__main__":
@@ -384,7 +457,7 @@ if __name__ == "__main__":
     ap.add_argument('-n', '--nodename', type=str, default=None, help='filter by node name.')
     ap.add_argument('-b', '--bynode', action='store_true', help='display by node.')
     ap.add_argument('-v', '--verbose', action='store_true', help='display in verbose mode')
-    ap.add_argument('-p', '--pagebreak', action='store_true', help='add page breaks')
+    ap.add_argument('-p', '--pdf', type=str, default=None, help='output to this PDF file.')
 
     args = vars(ap.parse_args())
 
@@ -399,13 +472,32 @@ if __name__ == "__main__":
     b9.start_logger(level=logging.ERROR)
 
     print("B9 OS version: {}".format(b9py.__version__), end="\r\n")
-    print(end="\r\n")
+    linefeed(1)
+
+    _verbose = args['verbose']
+    _nocolor = args['nocolor']
+    if args['pdf']:
+        _nocolor = True
+        if _verbose:
+            print('Verbose mode not supported for PDF output.')
+        _verbose = False
+        _pdf_canvas = Canvas(args['pdf'], pagesize=LETTER)
+        new_page()
 
     if args['bynode']:
         nodes = get_node_list()
+        page_ct = 0
         if nodes:
             for node in nodes:
                 if node[0] != 'BROKER':
-                    document(args['verbose'], node[0])
+                    document(_verbose, node[0], page_ct == (len(nodes) - 1))
+                page_ct += 1
     else:
-        document(args['verbose'], args['nodename'])
+        document(_verbose, args['nodename'])
+
+    if _pdf_canvas:
+        end_doc()
+        _pdf_canvas.save()
+        print("Output schema file '{}' has been generated. Enjoy!".format(args['pdf']))
+    else:
+        linefeed(1)

@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 import signal
 import b9py
-import logging
 import argparse
 import yaml
 import time
+import readline
+
+_running = True
+_srv_topics = []
 
 
 def sigint_handler(_signum, _frame):
@@ -21,10 +25,15 @@ def failed(srv_result):
 
 
 def yaml_load(dinput):
-    return yaml.load(dinput, Loader=yaml.FullLoader)
+    if dinput == '?':
+        return '?'
+    else:
+        return yaml.load(dinput, Loader=yaml.FullLoader)
 
 
 def print_registrations(items, nodename=None):
+    global _srv_topics
+
     title = '------ Services '
     print('{}{}'.format(title, '-' * (146 - len(title))))
     fmt = "{:45}{:18}{:16}{:8}{:30}{}"
@@ -36,11 +45,14 @@ def print_registrations(items, nodename=None):
                      'Node_Host'), end="\r\n")
     print('-' * 146)
 
+    _srv_topics = []
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
         regspecs = dict(items)[item]
         for regspec in regspecs:
             if not (regspec['nodename'].endswith('_cli')):
+                _srv_topics.append(regspec['topic'])
+
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
                     if regspec['message_type'] is None:
                         msgtype = "Any"
@@ -61,6 +73,8 @@ def print_registrations(items, nodename=None):
 
 
 def print_registrations_simple(items, nodename=None):
+    global _srv_topics
+
     title = '------ Services '
     print('{}{}'.format(title, '-' * (108 - len(title))))
     fmt = "{:45}{:18}{:30}{}"
@@ -70,11 +84,14 @@ def print_registrations_simple(items, nodename=None):
                      'Node_Host'), end="\r\n")
     print('-' * 108)
 
+    _srv_topics = []
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
         regspecs = dict(items)[item]
         for regspec in regspecs:
             if not (regspec['nodename'].endswith('_cli')):
+                _srv_topics.append(regspec['topic'])
+
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
                     if regspec['message_type'] is None:
                         msgtype = "Any"
@@ -92,7 +109,14 @@ def print_registrations_simple(items, nodename=None):
                                      regspec['owner_host']), end="\r\n")
 
 
-_running = True
+def completer(text, state):
+    global _srv_topics
+    options = [i for i in _srv_topics if i.startswith(text)]
+    if state < len(options):
+        return options[state]
+    else:
+        return None
+
 
 if __name__ == "__main__":
     print("\nB9 Service Tool", end="\r\n")
@@ -111,11 +135,11 @@ if __name__ == "__main__":
 
     #  subparser for call
     parser_call = subparsers.add_parser('call')
-    parser_call.add_argument("topic", help="publish to this topic.")
-    parser_call.add_argument("type", help="message type.")
-    parser_call.add_argument("data", help="message data.", type=yaml_load)
+    parser_call.add_argument("topic", type=str, default='?', nargs='?', help="publish to this topic.")
+    parser_call.add_argument("data", default='?', nargs='?', help="message data.", type=yaml_load)
     parser_call.add_argument('-i', '--interval', type=float, default=-1, help='repeat inverval in seconds.')
     parser_call.add_argument("-s", "--silent", action="store_true", help="do not display service result messages.")
+    parser_call.add_argument('-v', '--verbose', action='store_false', help='display in verbose mode')
 
     #  subparser for info
     parser_info = subparsers.add_parser('info')
@@ -134,8 +158,19 @@ if __name__ == "__main__":
 
     # Init B9 core
     b9 = b9py.B9('b9service_cli', broker_uri)
-    b9.start_logger(level=logging.INFO)
+#    b9.start_logger(level=logging.INFO)
     print(end="\r\n")
+
+    # Setup for optional topic autocompletion
+    if sys.platform == 'darwin':
+        # Apple uses libedit.
+        readline.parse_and_bind("bind -e")
+        readline.parse_and_bind("bind '\t' rl_complete")
+    else:
+        # Some tweaks for linux
+        readline.parse_and_bind('tab: complete')
+        readline.set_completer_delims(' \t\n`~!@#$%^&*()-=+[{]}\\|;:\'",<>?')
+    readline.set_completer(completer)
 
     client = b9py.ServiceClient('b9service', None, 'broker/registration/topic',
                                 None, 5555, broker_uri)
@@ -155,44 +190,76 @@ if __name__ == "__main__":
 
         # Call
         elif args['command'].lower() == 'call':
-            caller = b9.create_service_client(args['topic'])
-            stat = caller.connect()
-            if not stat.is_successful:
-                print("Service call failed. {}".format(stat.status_type), end="\r\n")
-                os.kill(os.getpid(), signal.SIGKILL)
-
-            if args['type'].lower() == 'string':
-                msg = b9py.MessageFactory.create_message_string(args['data'], 'b9service')
-            elif args['type'].lower() == 'int':
-                msg = b9py.MessageFactory.create_message_int(args['data'], 'b9service')
-            elif args['type'].lower() == 'float':
-                msg = b9py.MessageFactory.create_message_float(args['data'], 'b9service')
-            elif args['type'].lower() == 'bool':
-                msg = b9py.MessageFactory.create_message_bool(args['data'], 'b9service')
-            elif args['type'].lower() == 'null':
-                msg = b9py.MessageFactory.create_message_null('b9service')
-            elif args['type'].lower() == 'list':
-                msg = b9py.MessageFactory.create_message_list(args['data'], 'b9service')
-            else:
-                msg = b9py.MessageFactory.create_message_dictionary(args['data'], 'b9service')
-
-            while _running:
-                result = caller.call_service(msg)
-                if result.is_successful:
-                    if not args['silent']:
-                        result_str = "timestamp: {}, seq: {}, message type: {},\r\n        data: {}".format(
-                            result.result_data.timestamp,
-                            result.result_data.sequence,
-                            result.result_data.message_type,
-                            result.result_data.data)
-                        print("Result: {}".format(result_str), end="\r\n")
-                    if args['interval'] > 0:
-                        time.sleep(args['interval'])
-                    else:
-                        break
+            topic = None
+            call_data = None
+            if args['topic'] == '?':
+                # Topic not specified - show published and get a topic from the user
+                r = client.call_service(b9py.MessageFactory.create_srv_list_message())
+                if not r.is_successful:
+                    failed(r)
                 else:
-                    print("Service call failed. {}".format(result.status_type), end="\r\n")
+                    if args['verbose']:
+                        print_registrations_simple(r.result_data.data.items())
+                    else:
+                        print_registrations(r.result_data.data.items())
+                topic = input("\nTopic: ")
+            else:
+                # Use the topic provided by the command line
+                topic = (args['topic'])
+
+            if topic:
+                caller = b9.create_service_client(topic)
+                stat = caller.connect()
+                if not stat.is_successful:
+                    print("Service call failed. {}".format(stat.status_type), end="\r\n")
                     os.kill(os.getpid(), signal.SIGKILL)
+
+                msg_type: str = stat.result_data.data['message_type'].lower()
+                _srv_topics = []
+                if msg_type != "null":
+                    if args['data'] == '?':
+                        # Data not specified - Get it from the user
+                        call_data = yaml_load(input("Data ({}): ".format(msg_type.capitalize())))
+                    else:
+                        call_data = args['data']
+                        print(end="\r\n")
+
+                msg = None
+                try:
+                    if msg_type == 'string' or msg_type == 'str':
+                        msg = b9py.MessageFactory.create_message_string(call_data, 'b9service')
+                    elif msg_type == 'int':
+                        msg = b9py.MessageFactory.create_message_int(call_data, 'b9service')
+                    elif msg_type == 'float':
+                        msg = b9py.MessageFactory.create_message_float(call_data, 'b9service')
+                    elif msg_type == 'bool':
+                        msg = b9py.MessageFactory.create_message_bool(call_data, 'b9service')
+                    elif msg_type == 'null':
+                        msg = b9py.MessageFactory.create_message_null('b9service')
+                    elif msg_type == 'list':
+                        msg = b9py.MessageFactory.create_message_list(call_data, 'b9service')
+                    else:
+                        msg = b9py.MessageFactory.create_message_dictionary(call_data, 'b9service')
+                except AssertionError:
+                    print("Invalid data type. '{}' is not an {}.".format(call_data, msg_type.capitalize()), end="\r\n")
+
+                if msg:
+                    while _running:
+                        result = caller.call_service(msg)
+                        if result.is_successful:
+                            if not args['silent']:
+                                result_str = "timestamp: {}, seq: {}, message type: {},\r\n        data: {}".format(
+                                    result.result_data.timestamp,
+                                    result.result_data.sequence,
+                                    result.result_data.message_type,
+                                    result.result_data.data)
+                                print("Result: {}".format(result_str), end="\r\n")
+                            if args['interval'] > 0:
+                                time.sleep(args['interval'])
+                            else:
+                                break
+                        else:
+                            print("Service call failed. {}".format(result.status_type), end="\r\n")
 
         # Info
         elif args['command'].lower() == 'info':

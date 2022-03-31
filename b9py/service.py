@@ -108,7 +108,12 @@ class Service(object):
 
                 # Get request
                 [request_topic, msg_data] = await self._rep_sock.recv_multipart()
-                request = b9py.Message.unpack(msg_data)
+
+                try:
+                    request = b9py.Message.unpack(msg_data)
+                except ValueError:
+                    logging.error("Unable to unpack message received by '" + self._service_name + "'.")
+                    continue
 
                 if self._call_msg_type is not None and request.message_type != self._call_msg_type:
                     err_msg = "'{}' on node '{}'. Incoming {} != {}. {}".format(self._service_name,
