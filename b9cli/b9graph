@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+
+import os
+import logging
+import signal
+import argparse
+import igraph
+import random
+
+import b9py
+
+_nocolor = False
+
+
+# Control-C handler
+def shutdown_handler(_sig, _frame):
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def get_node_list():
+    client = b9py.ServiceClient('b9node', None, 'broker/registration/node',
+                                None, 5557, broker_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        r = client.call_service(b9py.MessageFactory.create_node_list_message())
+        client.close()
+        if not r.is_successful:
+            print("Registration service has failed. {}".format(r.status_type), end="\r\n")
+            return None
+        else:
+            return r.result_data.data.items()
+
+
+def get_services_list():
+    client = b9py.ServiceClient('b9service', None, 'broker/registration/topic',
+                                None, 5555, broker_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        r = client.call_service(b9py.MessageFactory.create_srv_list_message())
+        client.close()
+        if not r.is_successful:
+            print("Registration service has failed. {}".format(r.status_type), end="\r\n")
+            return None
+        else:
+            return r.result_data.data.items()
+
+
+def get_topic_list(pubsub: str):
+    client = b9py.ServiceClient('b9topic', None, 'broker/registration/topic',
+                                None, 5555, broker_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        r = client.call_service(b9py.MessageFactory.create_topic_list_message(pubsub))
+        client.close()
+        if not r.is_successful:
+            print("Registration service has failed. {}".format(r.status_type), end="\r\n")
+            return None
+        else:
+            return r.result_data.data.items()
+
+
+def find_publisher(topic_name, pub_list):
+    for pub in pub_list:
+        if pub[0] == topic_name:
+            nodename = pub[1][0]['nodename']
+            return nodename
+    return None
+
+
+def add_vertices_edges(graph):
+    all_pub_topics = get_topic_list("pub")
+    all_sub_topics = get_topic_list("sub")
+
+    pub_sub_topics = []
+    sorted_topics = dict(sorted(all_sub_topics, key=lambda x: x[0]))
+    for item in sorted_topics:
+        regspecs = dict(all_sub_topics)[item]
+        for regspec in regspecs:
+            if regspec['has_publisher'] and not regspec['nodename'].endswith('cli'):
+                pub_node = find_publisher(regspec['topic'], all_pub_topics)
+                if not pub_node.endswith('cli'):
+                    # topic, publisher, subscriber
+                    pub_sub_topics.append((regspec['topic'], pub_node, regspec['nodename']))
+
+    # Build a unique list of nodes
+    node_list = {}
+    for ps in pub_sub_topics:
+        node_list[ps[1]] = 0
+        node_list[ps[2]] = 0
+
+    # Count the total subscribers for each node
+    for ps in pub_sub_topics:
+        node_list[ps[2]] += 1
+
+    # Find the node with the most subscribers
+    max_sub_node = list(node_list.keys())[0]
+    max_subs = 0
+    for nname in node_list.keys():
+        if node_list[nname] > max_subs:
+            max_sub_node = nname
+            max_subs = node_list[nname]
+
+    # Add nodes as vertices
+    nodes: list = list(node_list.keys())
+    graph.add_vertices(len(node_list))
+    for i in range(len(graph.vs)):
+        graph.vs[i]["id"] = i
+        graph.vs[i]["name"] = nodes[i]
+        graph.vs[i]["label"] = nodes[i]
+        if args['nocolor']:
+            graph.vs[i]["color"] = "white"
+        else:
+            graph.vs[i]["color"] = "green"
+
+    # Add topics as edges
+    edges = []
+    for ps in pub_sub_topics:
+        edges.append((ps[1], ps[2]))
+    graph.add_edges(edges)
+
+    for i in range(len(g.es)):
+        graph.es[i]["label"] = pub_sub_topics[i][0]
+        graph.es[i]["curved"] = graph.es[i].is_multiple()
+
+    return max_sub_node
+
+
+if __name__ == "__main__":
+    print("B9 Graph Tool")
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument('-x', '--nocolor', action='store_true', help='no color commands in output')
+    ap.add_argument('-n', '--nodename', type=str, default=None, help='center node name.')
+    ap.add_argument('-f', '--filename', type=str, default=None, help='output file name.')
+
+    args = vars(ap.parse_args())
+
+    # Get the broker's address
+    broker_uri = os.environ.get('B9_BROKER')
+    if broker_uri is None:
+        broker_uri = 'localhost'
+        print("B9 broker URI was not specified. Using localhost.", end="\r\n")
+
+    # Init B9 core
+    b9 = b9py.B9('b9list_cli', broker_uri)
+    b9.start_logger(level=logging.ERROR)
+
+    # Create a directed graph
+    g = igraph.Graph(directed=True)
+    center_node = add_vertices_edges(g)
+
+    # Set bbox and margin
+    dpi = 150
+    visual_style = {"bbox": (dpi * 11, int(dpi * 8.5)),
+                    "margin": dpi}
+
+    # Set the layout
+    random.seed(123)    # Same layout every time
+    the_center = center_node
+    if args['nodename']:
+        the_center = args['nodename']
+    my_layout = g.layout_star(center=the_center)
+    visual_style["layout"] = my_layout
+
+    # Plot the graph
+    out = igraph.plot(g, **visual_style)
+    if args['filename']:
+        out.save(args['filename'])
+        print("Graph saved to '{}'".format(args['filename']))

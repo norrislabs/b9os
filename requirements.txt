@@ -16,3 +16,6 @@ pyfiglet
 netifaces
 opencv-contrib-python
 reportlab
+
+igraph
+opencv-python
