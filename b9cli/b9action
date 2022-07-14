@@ -311,6 +311,12 @@ if __name__ == "__main__":
     parser_pause.add_argument("data", default='?', nargs='?', help="message data.", type=yaml_load)
     parser_pause.add_argument('-v', '--verbose', action='store_false', help='display in verbose mode')
 
+    #  subparser for update
+    parser_pause = subparsers.add_parser('update')
+    parser_pause.add_argument("topic", type=str, default="?", nargs='?', help="action topic.")
+    parser_pause.add_argument("data", default='?', nargs='?', help="message data.", type=yaml_load)
+    parser_pause.add_argument('-v', '--verbose', action='store_false', help='display in verbose mode')
+
     #  subparser for monitor
     parser_mon = subparsers.add_parser('monitor')
     parser_mon.add_argument("topic", type=str, default="?", nargs='?', help="action topic.")
@@ -368,8 +374,8 @@ if __name__ == "__main__":
                     print_topic_registrations(result.result_data.data.items(), args['nodename'])
             print(end="\r\n")
 
-        # Start/Stop/Pause
-        elif args['command'].lower() in ['start', 'stop', 'pause']:
+        # Start/Stop/Pause/Update
+        elif args['command'].lower() in ['start', 'stop', 'pause', 'update']:
             topic = None
             call_data = None
             r = client.call_service(b9py.MessageFactory.create_srv_list_message())
@@ -402,8 +408,10 @@ if __name__ == "__main__":
                         result = act_client.start(cmd_data)
                     elif args['command'].lower() == "stop":
                         result = act_client.stop(cmd_data)
-                    else:
+                    elif args['command'].lower() == "pause":
                         result = act_client.pause(cmd_data)
+                    else:
+                        result = act_client.update(cmd_data)
 
                     print(end="\r\n")
                     if result.is_successful:

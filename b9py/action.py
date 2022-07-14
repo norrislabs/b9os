@@ -1,18 +1,18 @@
 import logging
 import b9py
 
-
 ACTION_STATUS_IDLE = 0
 ACTION_STATUS_STARTED = 1
 ACTION_STATUS_STOPPED = 2
 ACTION_STATUS_PAUSED = 3
 ACTION_STATUS_PROGRESS = 4
 ACTION_STATUS_COMPLETE = 5
-ACTION_STATUS_FAILED = 6
+ACTION_STATUS_UPDATED = 6
+ACTION_STATUS_FAILED = 7
 
 
 class ActionServer(object):
-    def __init__(self, b9core: b9py.B9, action_topic, namespace, start_cb, stop_cb, pause_cb=None):
+    def __init__(self, b9core: b9py.B9, action_topic, namespace, start_cb, stop_cb, pause_cb=None, update_cb=None):
         self._b9 = b9core
         self._topic = action_topic
         self._namespace = namespace
@@ -21,6 +21,7 @@ class ActionServer(object):
         self._start_cb = start_cb
         self._stop_cb = stop_cb
         self._pause_cb = pause_cb
+        self._update_cb = update_cb
 
         self._current_status = ACTION_STATUS_IDLE
 
@@ -63,6 +64,17 @@ class ActionServer(object):
                 logging.error("Action pause service failed to advertise.")
                 return
 
+        # Setup optional update service
+        if self._update_cb:
+            self._update_srv = self._b9.create_service("action/" + self._topic + "/update",
+                                                       b9py.Message.MSGTYPE_ANY,
+                                                       self._cb_closure(self._update_cb),
+                                                       namespace)
+            stat = self._update_srv.advertise()
+            if not stat.is_successful:
+                logging.error("Action update service failed to advertise.")
+                return
+
     def publish_status(self, status_code: int, status_data):
         msg = b9py.MessageFactory.create_message_action_status(status_code, status_data)
         self._status_pub.publish(msg)
@@ -73,6 +85,7 @@ class ActionServer(object):
         def action_callback(_topic, msg: b9py.Message):
             result = callback(msg.data)
             return b9py.MessageFactory.create_message_any(result)
+
         return action_callback
 
     @property
@@ -131,6 +144,14 @@ class ActionClient(object):
                                                          broker_uri=self._broker_uri)
         return result
 
+    def update(self, data=None) -> b9py.B9Status:
+        result = b9py.ServiceClient.oneshot_service_call(self._nodename,
+                                                         "action/" + self._topic + "/update",
+                                                         self._namespace,
+                                                         self._create_action_message(data),
+                                                         broker_uri=self._broker_uri)
+        return result
+
     @property
     def current_status(self):
         return self._current_status
@@ -156,6 +177,7 @@ class ActionClient(object):
             self._current_status = msg.data["status_code"]
             self._current_data = msg.data["status_data"]
             callback(topic, msg)
+
         return action_status_callback
 
     def _create_action_message(self, data: b9py.Message):
