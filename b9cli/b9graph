@@ -10,6 +10,7 @@ import random
 import b9py
 
 _nocolor = False
+_no_pub_name = "NA"
 
 
 # Control-C handler
@@ -76,11 +77,15 @@ def add_vertices_edges(graph):
     for item in sorted_topics:
         regspecs = dict(all_sub_topics)[item]
         for regspec in regspecs:
-            if regspec['has_publisher'] and not regspec['nodename'].endswith('cli'):
-                pub_node = find_publisher(regspec['topic'], all_pub_topics)
-                if not pub_node.endswith('cli'):
-                    # topic, publisher, subscriber
-                    pub_sub_topics.append((regspec['topic'], pub_node, regspec['nodename']))
+            if regspec['has_publisher']:
+                if not regspec['nodename'].endswith('cli'):
+                    pub_node = find_publisher(regspec['topic'], all_pub_topics)
+                    if not pub_node.endswith('cli'):
+                        # topic, publisher, subscriber
+                        pub_sub_topics.append((regspec['topic'], pub_node, regspec['nodename']))
+            else:
+                if args["unpub"]:
+                    pub_sub_topics.append((regspec['topic'], _no_pub_name, regspec['nodename']))
 
     # Build a unique list of nodes
     node_list = {}
@@ -90,7 +95,8 @@ def add_vertices_edges(graph):
 
     # Count the total subscribers for each node
     for ps in pub_sub_topics:
-        node_list[ps[2]] += 1
+        if not node_list[ps[1]] == _no_pub_name:
+            node_list[ps[2]] += 1
 
     # Find the node with the most subscribers
     max_sub_node = list(node_list.keys())[0]
@@ -107,10 +113,14 @@ def add_vertices_edges(graph):
         graph.vs[i]["id"] = i
         graph.vs[i]["name"] = nodes[i]
         graph.vs[i]["label"] = nodes[i]
+        graph.vs[i]["size"] = 50
         if args['nocolor']:
             graph.vs[i]["color"] = "white"
         else:
-            graph.vs[i]["color"] = "green"
+            if nodes[i] == _no_pub_name:
+                graph.vs[i]["color"] = "green"
+            else:
+                graph.vs[i]["color"] = "green"
 
     # Add topics as edges
     edges = []
@@ -118,9 +128,32 @@ def add_vertices_edges(graph):
         edges.append((ps[1], ps[2]))
     graph.add_edges(edges)
 
+    # Add all the topic edges
+    # and collect all topics labels that belong to an edge
+    edge_labels = {}
     for i in range(len(g.es)):
-        graph.es[i]["label"] = pub_sub_topics[i][0]
-        graph.es[i]["curved"] = graph.es[i].is_multiple()
+        graph.es[i]["curved"] = False  # graph.es[i].is_multiple()
+
+        edge_key = graph.es[i].source_vertex['label'], graph.es[i].target_vertex['label']
+        if edge_key in edge_labels:
+            edge_labels[edge_key].append(pub_sub_topics[i][0])
+        else:
+            edge_labels[edge_key] = [pub_sub_topics[i][0]]
+
+        if pub_sub_topics[i][1] == _no_pub_name:
+            if not args['nocolor']:
+                graph.es[i]["color"] = "red"
+
+    labeled = []
+    for i in range(len(g.es)):
+        edge_key = graph.es[i].source_vertex['label'], graph.es[i].target_vertex['label']
+        if edge_key not in labeled:
+            labels = edge_labels[edge_key]
+            label_text = ""
+            for lb in labels:
+                label_text += lb + "\n"
+            graph.es[i]["label"] = label_text.strip()
+            labeled.append(edge_key)
 
     return max_sub_node
 
@@ -133,6 +166,7 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
     ap.add_argument('-x', '--nocolor', action='store_true', help='no color commands in output')
+    ap.add_argument('-u', '--unpub', action='store_true', help='show unpublished topics')
     ap.add_argument('-n', '--nodename', type=str, default=None, help='center node name.')
     ap.add_argument('-f', '--filename', type=str, default=None, help='output file name.')
 
@@ -155,13 +189,17 @@ if __name__ == "__main__":
     # Set bbox and margin
     dpi = 150
     visual_style = {"bbox": (dpi * 11, int(dpi * 8.5)),
-                    "margin": dpi}
+                    "margin": 200,
+                    "autocurve": False}
 
     # Set the layout
-    random.seed(123)    # Same layout every time
     the_center = center_node
     if args['nodename']:
         the_center = args['nodename']
+    elif args['unpub']:
+        the_center = _no_pub_name
+
+    random.seed(123)  # Same layout every time
     my_layout = g.layout_star(center=the_center)
     visual_style["layout"] = my_layout
 

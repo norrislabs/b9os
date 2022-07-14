@@ -22,6 +22,7 @@ class Message(object):
     MSGTYPE_POINTCLOUD = 'PointCloud'
     MSGTYPE_OBSTACLEMAP = 'ObstacleMap'
     MSGTYPE_SUBMUX_SYNC = "SubMuxSync"
+    MSGTYPE_ACTION_STATUS = "ActionStatus"
 
     MSGTYPE_ERROR = 'Error'
 
@@ -122,6 +123,10 @@ class MessageFactory(object):
         pass
 
     @staticmethod
+    def create_message_any(data, source=None):
+        return Message(Message.MSGTYPE_ANY, data, source)
+
+    @staticmethod
     def create_message_string(data, source=None):
         assert (isinstance(data, str))
         return Message(Message.MSGTYPE_STRING, data, source)
@@ -168,6 +173,11 @@ class MessageFactory(object):
         return Message(Message.MSGTYPE_SUBMUX_SYNC, {'priority_number': priority_number,
                                                      'priority_name': priority_name,
                                                      'message_data': msg_data}, source)
+
+    @staticmethod
+    def create_message_action_status(status_code, status_data, source=None):
+        return Message(Message.MSGTYPE_ACTION_STATUS, {'status_code': status_code,
+                                                       'status_data': status_data}, source)
 
     @staticmethod
     def create_message_vector3(x, y, z, source=None):

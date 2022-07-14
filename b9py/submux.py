@@ -38,7 +38,7 @@ class SubscriberMultiplexer(object):
             self._synchro_pub = self._b9.create_publisher(topic + "/sync", b9py.Message.MSGTYPE_SUBMUX_SYNC, namespace)
             stat = self._synchro_pub.advertise()
             if not stat.is_successful:
-                print("Submux sync publisher failed to advertise.")
+                logging.error("Submux sync publisher failed to advertise.")
 
         # Build out all the subscribers and their callbacks
         for priority in range(len(self._mux_spec)):
