@@ -307,10 +307,10 @@ class B9(object):
     def create_parameter_client(self, nodename, namespace=None, parameter_topic=None):
         return b9py.Parameter(self.broker_uri, nodename, namespace, parameter_topic)
 
-    def create_action_server(self, topic, start_cb, stop_cb, pause_cb=None, update_cb=None, namespace=None):
-        return b9py.ActionServer(self, topic, namespace, start_cb, stop_cb, pause_cb, update_cb)
+    def create_action_server(self, topic, start_cb, stop_cb, pause_cb=None, namespace=None):
+        return b9py.ActionServer(self, topic, namespace, start_cb, stop_cb, pause_cb)
 
-    def create_action_client(self, topic, status_cb, namespace=None):
+    def create_action_client(self, topic, status_cb=None, namespace=None):
         return b9py.ActionClient(self, topic, namespace, status_cb)
 
 

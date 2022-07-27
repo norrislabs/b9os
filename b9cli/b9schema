@@ -16,6 +16,9 @@ _pdf_canvas = None
 _pdf_pages = []
 _nocolor = False
 
+_srv_topics = []
+_topics = []
+
 
 # Control-C handler
 def shutdown_handler(_sig, _frame):
@@ -150,30 +153,31 @@ def print_topic_registrations(regtype, items, nodename=None):
         for regspec in regspecs:
             if not (regspec['nodename'].endswith('_cli') and regtype == "sub"):
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
-                    topic_count += 1
-                    if regspec['message_type'] is None:
-                        msgtype = "Any"
-                    else:
-                        msgtype = regspec['message_type']
+                    if regtype == "sub" or "/action/" not in regspec['topic']:
+                        topic_count += 1
+                        if regspec['message_type'] is None:
+                            msgtype = "Any"
+                        else:
+                            msgtype = regspec['message_type']
 
-                    if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
-                        ip = "-" * 14
-                        the_port = "-" * 4
-                        if not _nocolor:
-                            color = Fore.YELLOW
-                    else:
-                        ip = regspec['IP']
-                        the_port = str(regspec['port'])
-                        if not _nocolor:
-                            color = Fore.RESET
+                        if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
+                            ip = "-" * 14
+                            the_port = "-" * 4
+                            if not _nocolor:
+                                color = Fore.YELLOW
+                        else:
+                            ip = regspec['IP']
+                            the_port = str(regspec['port'])
+                            if not _nocolor:
+                                color = Fore.RESET
 
-                    output(fmt.format(color,
-                                      regspec['topic'],
-                                      msgtype,
-                                      ip,
-                                      the_port,
-                                      regspec['nodename'],
-                                      regspec['owner_host'] + "/" + regspec['owner_ip']))
+                        output(fmt.format(color,
+                                          regspec['topic'],
+                                          msgtype,
+                                          ip,
+                                          the_port,
+                                          regspec['nodename'],
+                                          regspec['owner_host'] + "/" + regspec['owner_ip']))
     if topic_count == 0:
         if regtype == 'pub':
             output("No publishers provided by this node.")
@@ -208,24 +212,25 @@ def print_topic_registrations_simple(regtype, items, nodename=None):
         for regspec in regspecs:
             if not (regspec['nodename'].endswith('_cli') and regtype == "sub"):
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
-                    topic_count += 1
-                    if regspec['message_type'] is None:
-                        msgtype = "Any"
-                    else:
-                        msgtype = regspec['message_type']
+                    if regtype == "sub" or "/action/" not in regspec['topic']:
+                        topic_count += 1
+                        if regspec['message_type'] is None:
+                            msgtype = "Any"
+                        else:
+                            msgtype = regspec['message_type']
 
-                    if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
-                        if not _nocolor:
-                            color = Fore.YELLOW
-                    else:
-                        if not _nocolor:
-                            color = Fore.RESET
+                        if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
+                            if not _nocolor:
+                                color = Fore.YELLOW
+                        else:
+                            if not _nocolor:
+                                color = Fore.RESET
 
-                    output(fmt.format(color,
-                                      regspec['topic'],
-                                      msgtype,
-                                      regspec['nodename'],
-                                      regspec['owner_host']))
+                        output(fmt.format(color,
+                                          regspec['topic'],
+                                          msgtype,
+                                          regspec['nodename'],
+                                          regspec['owner_host']))
     if topic_count == 0:
         if regtype == 'pub':
             output("No publishers provided by this node.")
@@ -252,23 +257,24 @@ def print_service_registrations(items, nodename=None):
         for regspec in regspecs:
             if not regspec['nodename'].endswith('_cli'):
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
-                    srv_count += 1
-                    if regspec['message_type'] is None:
-                        msgtype = "Any"
-                    else:
-                        msgtype = regspec['message_type']
+                    if "/action/" not in regspec['topic']:
+                        srv_count += 1
+                        if regspec['message_type'] is None:
+                            msgtype = "Any"
+                        else:
+                            msgtype = regspec['message_type']
 
-                    if regspec['ret_msg_type'] is None:
-                        retmsgtype = "Any"
-                    else:
-                        retmsgtype = regspec['ret_msg_type']
+                        if regspec['ret_msg_type'] is None:
+                            retmsgtype = "Any"
+                        else:
+                            retmsgtype = regspec['ret_msg_type']
 
-                    output(fmt.format(regspec['topic'],
-                                      msgtype + "/" + retmsgtype,
-                                      regspec['IP'],
-                                      str(regspec['port']),
-                                      regspec['nodename'],
-                                      regspec['owner_host'] + "/" + regspec['owner_ip']))
+                        output(fmt.format(regspec['topic'],
+                                          msgtype + "/" + retmsgtype,
+                                          regspec['IP'],
+                                          str(regspec['port']),
+                                          regspec['nodename'],
+                                          regspec['owner_host'] + "/" + regspec['owner_ip']))
     if srv_count == 0:
         output("No services provided by this node.")
 
@@ -290,21 +296,22 @@ def print_service_registrations_simple(items, nodename=None):
         for regspec in regspecs:
             if not (regspec['nodename'].endswith('_cli')):
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
-                    srv_count += 1
-                    if regspec['message_type'] is None:
-                        msgtype = "Any"
-                    else:
-                        msgtype = regspec['message_type']
+                    if "/action/" not in regspec['topic']:
+                        srv_count += 1
+                        if regspec['message_type'] is None:
+                            msgtype = "Any"
+                        else:
+                            msgtype = regspec['message_type']
 
-                    if regspec['ret_msg_type'] is None:
-                        retmsgtype = "Any"
-                    else:
-                        retmsgtype = regspec['ret_msg_type']
+                        if regspec['ret_msg_type'] is None:
+                            retmsgtype = "Any"
+                        else:
+                            retmsgtype = regspec['ret_msg_type']
 
-                    output(fmt.format(regspec['topic'],
-                                      msgtype + '/' + retmsgtype,
-                                      regspec['nodename'],
-                                      regspec['owner_host']))
+                        output(fmt.format(regspec['topic'],
+                                          msgtype + '/' + retmsgtype,
+                                          regspec['nodename'],
+                                          regspec['owner_host']))
     if srv_count == 0:
         output("No services provided by this node.")
 
@@ -331,6 +338,177 @@ def print_parameter_server(title, verbose, parameter_topic=None):
         failed(r)
     else:
         print_parameters(title, r.result_data.data, verbose)
+
+
+def is_action_service(action_topic: str):
+    names = action_topic.split('/')
+    if names[2] == "action" and names[-1] in ['start', 'stop', 'pause']:
+        return names[3]
+    else:
+        return None
+
+
+def is_action_topic(action_topic: str):
+    names = action_topic.split('/')
+    if names[2] == "action" and names[-1] == 'status':
+        return names[3]
+    else:
+        return None
+
+
+def print_action_services(items, nodename=None):
+    global _srv_topics
+
+    title = '------ Action Services '
+    output('{}{}'.format(title, '-' * (146 - len(title))))
+    fmt = "{:42}{:18}{:16}{:8}{:34}{}"
+    output(fmt.format('Topic',
+                      'Message_Type',
+                      'IP',
+                      'Port',
+                      'Node_Name',
+                      'Node_Host'))
+    output('-' * 146)
+
+    srv_count = 0
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if not (regspec['nodename'].endswith('_cli')):
+                if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    if regspec['message_type'] is None:
+                        msgtype = "Any"
+                    else:
+                        msgtype = regspec['message_type']
+
+                    if regspec['ret_msg_type'] is None:
+                        retmsgtype = "Any"
+                    else:
+                        retmsgtype = regspec['ret_msg_type']
+
+                    if is_action_service(regspec['topic']):
+                        srv_count += 1
+                        output(fmt.format(regspec['topic'],
+                                          msgtype + '/' + retmsgtype,
+                                          regspec['IP'],
+                                          str(regspec['port']),
+                                          regspec['nodename'],
+                                          regspec['owner_host'] + "/" + regspec['owner_ip']))
+
+    if srv_count == 0:
+        output("No actions provided by this node.")
+
+
+def print_action_services_simple(items, nodename=None):
+    title = '------ Action Services '
+    output('{}{}'.format(title, '-' * (105 - len(title))))
+    fmt = "{:42}{:18}{:31}{}"
+    output(fmt.format('Topic',
+                      'Message_Type',
+                      'Node_Name',
+                      'Node_Host'))
+    output('-' * 105)
+
+    srv_count = 0
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if not (regspec['nodename'].endswith('_cli')):
+                if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    if regspec['message_type'] is None:
+                        msgtype = "Any"
+                    else:
+                        msgtype = regspec['message_type']
+
+                    if regspec['ret_msg_type'] is None:
+                        retmsgtype = "Any"
+                    else:
+                        retmsgtype = regspec['ret_msg_type']
+
+                    if is_action_service(regspec['topic']):
+                        srv_count += 1
+                        output(fmt.format(regspec['topic'],
+                                          msgtype + '/' + retmsgtype,
+                                          regspec['nodename'],
+                                          regspec['owner_host']))
+
+    if srv_count == 0:
+        output("No actions provided by this node.")
+
+
+def print_action_status_topics(items, nodename=None):
+    title = '------ Action Status Publishers '
+    print('{}{}'.format(title, '-' * (145 - len(title))))
+    fmt = "{:42}{:18}{:16}{:8}{:34}{}"
+    output(fmt.format('Topic',
+                      'Message_Type',
+                      'IP',
+                      'Port',
+                      'Node_Name',
+                      'Node_Host'))
+    print('-' * 145)
+
+    topic_count = 0
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if not regspec['nodename'].endswith('_cli'):
+                if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    if regspec['message_type'] is None:
+                        msgtype = "Any"
+                    else:
+                        msgtype = regspec['message_type']
+
+                    ip = regspec['IP']
+                    the_port = str(regspec['port'])
+
+                    if is_action_topic(regspec['topic']):
+                        topic_count += 1
+                        output(fmt.format(regspec['topic'],
+                                          msgtype,
+                                          ip,
+                                          the_port,
+                                          regspec['nodename'],
+                                          regspec['owner_host'] + "/" + regspec['owner_ip']))
+
+    if topic_count == 0:
+        output("No action feedback publishers provided by this node.")
+
+
+def print_action_status_topics_simple(items, nodename=None):
+    title = '------ Action Status Publishers '
+    output('{}{}'.format(title, '-' * (105 - len(title))))
+    fmt = "{:42}{:18}{:31}{}"
+    output(fmt.format('Topic',
+                      'Message_Type',
+                      'Node_Name',
+                      'Node_Host'))
+    output('-' * 105)
+
+    topic_count = 0
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if not regspec['nodename'].endswith('_cli'):
+                if nodename is None or nodename.lower() == regspec['nodename'].lower():
+                    if regspec['message_type'] is None:
+                        msgtype = "Any"
+                    else:
+                        msgtype = regspec['message_type']
+
+                    if is_action_topic(regspec['topic']):
+                        topic_count += 1
+                        output(fmt.format(regspec['topic'],
+                                          msgtype,
+                                          regspec['nodename'],
+                                          regspec['owner_host']))
+
+    if topic_count == 0:
+        output("No action feedback publishers provided by this node.")
 
 
 def get_node_list():
@@ -435,11 +613,40 @@ def document(verbose, by_nodename, last_page=False):
 
     # List services
     srv_list = get_services_list()
-    if srv_list:
-        if verbose:
-            print_service_registrations(srv_list, by_nodename)
+    if verbose:
+        print_service_registrations(srv_list, by_nodename)
+    else:
+        print_service_registrations_simple(srv_list, by_nodename)
+
+    if by_nodename is None:
+        pagebreak()
+    else:
+        linefeed(2)
+
+    # List actions
+    if args['verbose']:
+        print_action_services(srv_list, by_nodename)
+    else:
+        print_action_services_simple(srv_list, by_nodename)
+
+    if by_nodename is None:
+        pagebreak()
+    else:
+        linefeed(2)
+
+    # List action feedback (status) publishers
+    client = b9py.ServiceClient('b9topic', None, 'broker/registration/topic',
+                                None, 5555, broker_uri)
+    stat = client.connect()
+    if stat.is_successful:
+        r = client.call_service(b9py.MessageFactory.create_topic_list_message('pub'))
+        if not r.is_successful:
+            failed(r)
         else:
-            print_service_registrations_simple(srv_list, by_nodename)
+            if verbose:
+                print_action_status_topics(r.result_data.data.items(), by_nodename)
+            else:
+                print_action_status_topics_simple(r.result_data.data.items(), by_nodename)
 
     if by_nodename is not None:
         if not last_page:
