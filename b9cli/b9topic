@@ -27,6 +27,7 @@ _lat_avg_list = [0]
 _lat_avg_size = 10
 
 _topics = []
+_namespace = ""
 
 
 class FPS:
@@ -182,8 +183,14 @@ def yaml_load(dinput):
     return yaml.load(dinput, Loader=yaml.FullLoader)
 
 
+def get_namespace(the_topic: str):
+    names = the_topic.split('/')
+    return names[1]
+
+
 def print_registrations(regtype, items, nodename=None):
     global _topics
+    global _namespace
 
     if regtype == 'pub':
         title = '------ Publishers '
@@ -203,6 +210,7 @@ def print_registrations(regtype, items, nodename=None):
     print('-' * 145)
 
     _topics = []
+    _namespace = ""
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
         regspecs = dict(items)[item]
@@ -210,6 +218,7 @@ def print_registrations(regtype, items, nodename=None):
             if not (regspec['nodename'].endswith('_cli') and regtype == "sub"):
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
                     _topics.append(regspec['topic'])
+                    _namespace = get_namespace(regspec['topic'])
 
                     if regspec['message_type'] is None:
                         msgtype = "Any"
@@ -236,6 +245,7 @@ def print_registrations(regtype, items, nodename=None):
 
 def print_registrations_simple(regtype, items, nodename=None):
     global _topics
+    global _namespace
 
     if regtype == 'pub':
         title = '------ Publishers '
@@ -253,6 +263,7 @@ def print_registrations_simple(regtype, items, nodename=None):
     print('-' * 105)
 
     _topics = []
+    _namespace = ""
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
         regspecs = dict(items)[item]
@@ -260,6 +271,7 @@ def print_registrations_simple(regtype, items, nodename=None):
             if not (regspec['nodename'].endswith('_cli') and regtype == "sub"):
                 if nodename is None or nodename.lower() == regspec['nodename'].lower():
                     _topics.append(regspec['topic'])
+                    _namespace = get_namespace(regspec['topic'])
 
                     if regspec['message_type'] is None:
                         msgtype = "Any"
@@ -285,6 +297,16 @@ def completer(text, state):
         return options[state]
     else:
         return None
+
+
+def input_with_prefill(prompt, text):
+    def hook():
+        readline.insert_text(text)
+        readline.redisplay()
+    readline.set_pre_input_hook(hook)
+    res = input(prompt)
+    readline.set_pre_input_hook()
+    return res
 
 
 _fps = FPS()
@@ -402,7 +424,7 @@ if __name__ == "__main__":
                         print_registrations_simple('pub', r.result_data.data.items())
                     else:
                         print_registrations('pub', r.result_data.data.items())
-                topic = input("\ntopic: ")
+                topic = input_with_prefill("\ntopic: ", "/" + _namespace + "/")
             else:
                 # Use the topic provided by the command line
                 topic = (args['topic'])

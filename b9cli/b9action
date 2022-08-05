@@ -35,7 +35,7 @@ def yaml_load(dinput):
 def is_action_service(action_topic: str):
     names = action_topic.split('/')
     if names[2] == "action" and names[-1] in ['start', 'stop', 'pause']:
-        return names[3]
+        return '/'.join(names[3:-1])
     else:
         return None
 
@@ -43,7 +43,7 @@ def is_action_service(action_topic: str):
 def is_action_topic(action_topic: str):
     names = action_topic.split('/')
     if names[2] == "action" and names[-1] == 'status':
-        return names[3]
+        return '/'.join(names[3:-1])
     else:
         return None
 
@@ -262,6 +262,18 @@ def print_actions(items):
                                      regspec['owner_host']), end="\r\n")
 
 
+def get_actions_list(items):
+    action_topics = []
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            act_name = is_action_service(regspec['topic'])
+            if act_name and act_name not in action_topics:
+                action_topics.append(act_name)
+    return action_topics
+
+
 def completer(text, state):
     global _srv_topics
     options = [i for i in _srv_topics if i.startswith(text)]
@@ -271,9 +283,13 @@ def completer(text, state):
         return None
 
 
-def action_status_cb(_topic, msg: b9py.Message):
+def action_status_cb(atopic, msg: b9py.Message):
     if args['verbose']:
-        print("seq: {}, {}".format(msg.sequence, msg.data))
+        status_text = ["IDLE", "STARTED", "STOPPED", "PAUSED", "FEEDBACK", "RESULT"]
+        print("{:22} {:5} {:10} {}".format(is_action_topic(atopic),
+                                           msg.sequence,
+                                           status_text[msg.data['status_code']],
+                                           msg.data['status_data']))
     else:
         print(msg)
 
@@ -325,7 +341,7 @@ if __name__ == "__main__":
 
     # Init B9 core
     b9 = b9py.B9('b9action_cli', broker_uri)
-#    b9.start_logger(level=logging.INFO)
+    #    b9.start_logger(level=logging.INFO)
     print(end="\r\n")
 
     # Setup for optional topic autocompletion
@@ -418,7 +434,7 @@ if __name__ == "__main__":
 
         # Monitor
         elif args['command'].lower() == 'monitor':
-            topic = None
+            topics = []
             call_data = None
             r = client.call_service(b9py.MessageFactory.create_srv_list_message())
             if not r.is_successful:
@@ -426,19 +442,23 @@ if __name__ == "__main__":
             else:
                 ns = get_namespace(r.result_data.data.items())
                 if args['topic'] == '?':
-                    # Topic not specified - show published and get a topic from the user
+                    # Topic not specified - show available actions and get a topic from the user
                     print_actions(r.result_data.data.items())
-                    topic = input("\nTopic: ")
+                    topics.append(input("\nTopic: "))
                     print(end="\r\n")
+
+                elif args['topic'] == 'all':
+                    topics = get_actions_list(r.result_data.data.items())
+
                 else:
                     # Use the topic provided by the command line
-                    topic = args['topic']
+                    topics.append(args['topic'])
 
-                if topic:
-                    act_client = b9.create_action_client(topic, action_status_cb, ns)
-
+                if len(topics) > 0:
                     print(end="\r\n")
-                    print("Status messages published by action '{}':".format(topic), end='\r\n')
+                    act_clients = []
+                    for topic in topics:
+                        act_clients.append(b9.create_action_client(topic, action_status_cb, ns))
 
                     signal.signal(signal.SIGINT, sigint_handler)
                     b9.spin_forever()

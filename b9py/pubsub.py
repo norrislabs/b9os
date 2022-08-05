@@ -400,6 +400,21 @@ class Subscriber(object):
                                                          5555, self._broker_uri)
         return result
 
+    def _unregister_subscriber(self):
+        sub_unreg_msg = b9py.Message(b9py.Message.MSGTYPE_TOPIC_REGISTRATION,
+                                     {'cmd': 'UNREGISTER', 'sub_cmd': 'SUB',
+                                      'topic': self._topic,
+                                      'nodename': self._node_name},
+                                     self._node_name)
+
+        # Register the subscription
+        result = b9py.ServiceClient.oneshot_service_call(self._node_name,
+                                                         'broker/registration/topic',
+                                                         None,
+                                                         sub_unreg_msg,
+                                                         5555, self._broker_uri)
+        return result
+
     def subscribe(self, quiet=False):
         self._sub_sock = self._ctx.socket(zmq.SUB)
         self._sub_sock.setsockopt_string(zmq.SUBSCRIBE, self._topic)
@@ -479,6 +494,11 @@ class Subscriber(object):
         logging.info("'{}' connected to publisher at {}".format(self._sub_name, self._pub_uri))
         return b9py.B9Status.success_status()
 
+    def unsubscribe(self):
+        stat = self._unregister_subscriber()
+        self._reset()
+        return stat
+
     def _reset(self):
         self._pub_uri = None
         if self._task_sub is not None:
@@ -554,8 +574,10 @@ class Subscriber(object):
             logging.debug("'" + self._sub_name + "' receive task has been canceled.")
 
         finally:
-            self._sub_sock.close()
-            self._ctx.destroy()
+            if self._sub_sock:
+                self._sub_sock.close()
+            if self._ctx:
+                self._ctx.destroy()
 
     async def _message_task(self):
         try:
