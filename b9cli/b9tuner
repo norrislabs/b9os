@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+
+import os
+import signal
+import argparse
+import logging
+import pyfiglet
+import xmltodict
+import PySimpleGUI as sG
+
+import b9py
+
+tuner_list = {}
+
+
+def sigint_handler(_signum, _frame):
+    print('\nCtrl-C shutdown.', end="\r\n")
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def build_tuner(name, title, start, end, step, default):
+    global tuner_list
+    tuner_list[name] = {'title': title, 'start': start, 'end': end, 'step': step, 'default': default}
+
+    btn_reset = sG.Button("Reset", key='btn_reset_' + name, size=(8, 1))
+    sld_tuner = sG.Slider(orientation='horizontal', key='sld_tune_' + name, resolution=step,
+                          pad=((10, 10), (0, 20)),
+                          enable_events=True, expand_x=True,
+                          default_value=default, range=(start, end))
+    btn_set = sG.Button("Set", key='btn_set_' + name, size=(8, 1), disabled_button_color='gray')
+    ckb_live = sG.Checkbox("Live", key='cb_live_' + name, enable_events=True, default=False)
+
+    row = [btn_reset, sld_tuner, btn_set, ckb_live]
+    frame = sG.Frame(title, [row], vertical_alignment='center', expand_x=True)
+    return [frame]
+
+
+sG.theme('DarkGrey9')
+
+header = [
+    [sG.Button("Reset All", key='btn_reset_all', size=(8, 1)),
+     sG.T(" ", expand_x=True, pad=((10, 10), (0, 20))),
+     sG.Button("Set All", key='btn_set_all', size=(8, 1), disabled_button_color='gray'),
+     sG.Checkbox("All\nLive", key='cb_live_all', enable_events=True, default=False)]
+]
+
+footer = [
+    [sG.T(key='status', expand_x=True),
+     sG.Button("Clear", key="btn_clear", size=(6, 1), pad=(5, 5)),
+     sG.T(" ", pad=((10, 10), (0, 24))),
+     sG.Button("Exit", size=(8, 1), pad=(5, 5))]
+]
+
+# Build the tuners layout
+tuner_layout = [
+    [sG.Frame("All Tuners", header, expand_x=True)],
+]
+
+scroller = [
+    [sG.Multiline(size=(50, 10), expand_x=True, expand_y=True,
+                  pad=(5, 5),
+                  font='courier 16',
+                  background_color='black', text_color='lime',
+                  key='ml_published')]
+]
+
+# Build the published values tuner layout
+scroller_layout = [
+    [sG.Frame("Published Values", scroller, expand_x=True, expand_y=True)],
+]
+
+if __name__ == "__main__":
+    print(pyfiglet.figlet_format("B9 Tuner"))
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("config_file", help="configuration file.")
+
+    args = vars(ap.parse_args())
+
+    # Get the broker's address
+    broker_uri = os.environ.get('B9_BROKER')
+    if broker_uri is None:
+        broker_uri = 'localhost'
+        print("B9 broker URI was not specified. Using localhost.", end="\r\n")
+
+    # Init B9 core
+    b9 = b9py.B9('b9tuner_gui', broker_uri)
+    b9.start_logger(level=logging.DEBUG)
+    print(end="\r\n")
+
+    # Make sure the specifed config file is available
+    if not os.path.exists(args['config_file']):
+        logging.info("Can not find configuartion file '{}'.".format(args['config_file']))
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    # Open the config file and read the contents
+    with open(args['config_file'], 'r', encoding='utf-8') as file:
+        exp_xml = file.read()
+
+    # Parse the XML configuration document
+    tuners_spec = xmltodict.parse(exp_xml)
+
+    # Get a list of tuners
+    tuners = tuners_spec["tuners"]["tuner"]
+    if isinstance(tuners, dict):
+        tuners = [tuners]
+
+    # Build each tuner's frame
+    for tnr in tuners:
+        tuner = build_tuner(tnr["@name"],
+                            tnr["@title"],
+                            float(tnr["@start"]),
+                            float(tnr["@end"]),
+                            float(tnr["@step"]),
+                            float(tnr["@default"]))
+        tuner_layout.extend([tuner])
+
+    # Build the final layout
+    layout = [[sG.Column(tuner_layout, vertical_alignment='top'),
+               sG.Column(scroller_layout, vertical_alignment='top', expand_y=True)]]
+
+    # Add the footer (status line and exit button)
+    layout.extend([footer])
+
+    # Build and show the main window
+    window = sG.Window(tuners_spec['tuners']['@title'], layout, font=('Helvetica', 16), resizable=True)
+    window.Finalize()
+
+    # Setup tuners publisher
+    pub = b9.create_publisher(tuners_spec['tuners']['@topic'],
+                              b9py.Message.MSGTYPE_DICT, tuners_spec['tuners']['@ns'])
+    stat = pub.advertise()
+    if not stat.is_successful:
+        status = "Publisher '{}' failed to advertise.".format(tuners_spec['tuners']['@topic'])
+        logging.error(status)
+        window['status'].Update(value=status)
+
+    # The Event Loop
+    while True:
+        event, values = window.read(timeout=100)
+        if event == sG.WIN_CLOSED or event == 'Exit':
+            break
+
+        if event.startswith('btn_reset_'):
+            tune_name = event.split("_")[2]
+            pub_values = {}
+            if tune_name == 'all':
+                for kname in tuner_list.keys():
+                    pub_values[kname] = tuner_list[kname]['default']
+                    window['sld_tune_' + kname].Update(value=tuner_list[kname]['default'])
+            else:
+                pub_values[tune_name] = tuner_list[tune_name]['default']
+                window['sld_tune_' + tune_name].Update(value=tuner_list[tune_name]['default'])
+            pub.publish(b9py.MessageFactory.create_message_dictionary(pub_values))
+            window['ml_published'].print(pub_values)
+
+        elif event.startswith('btn_set_'):
+            tune_name = event.split("_")[2]
+            pub_values = {}
+            if tune_name == 'all':
+                for kname in tuner_list.keys():
+                    pub_values[kname] = values['sld_tune_' + kname]
+            else:
+                pub_values[tune_name] = values['sld_tune_' + tune_name]
+            pub.publish(b9py.MessageFactory.create_message_dictionary(pub_values))
+            window['ml_published'].print(pub_values)
+
+        elif event.startswith('sld_tune_'):
+            tune_name = event.split("_")[2]
+            pub_values = {}
+            if values['cb_live_' + tune_name]:
+                pub_values[tune_name] = values['sld_tune_' + tune_name]
+                pub.publish(b9py.MessageFactory.create_message_dictionary(pub_values))
+                window['ml_published'].print(pub_values)
+
+        elif event.startswith('cb_live_'):
+            tune_name = event.split("_")[2]
+            if tune_name == 'all':
+                window['btn_set_all'].update(disabled=values['cb_live_all'])
+                for kname in tuner_list.keys():
+                    window['btn_set_' + kname].update(disabled=values['cb_live_all'])
+                    window['cb_live_' + kname].update(value=values['cb_live_all'])
+            else:
+                window['btn_set_' + tune_name].update(disabled=values['cb_live_' + tune_name])
+
+        elif event.startswith('btn_clear'):
+            window['ml_published'].update(value="")
+
+        b9.spin_once()
+
+    window.close()

@@ -14,8 +14,9 @@ psutil
 pyserial
 pyfiglet
 netifaces
-opencv-contrib-python
 reportlab
-
+PySimpleGUI
 igraph
-opencv-python
+Pypubsub
+xmltodict
+opencv-contrib-python

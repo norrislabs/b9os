@@ -6,10 +6,9 @@ import signal
 import subprocess
 import argparse
 import time
-from colorama import Fore
-import b9py
+import pyfiglet
 
-PYTHON_EXE = "python3.7"
+PYTHON_EXE = "python3"
 
 
 # Control-C handler
@@ -17,9 +16,12 @@ def shutdown_handler(_sig, _frame):
     os.kill(os.getpid(), signal.SIGKILL)
 
 
-def run(command, env):
+def start_process(command, env, shell=False):
     try:
-        return subprocess.Popen(command, env=env, stdin=sys.stdin)
+        return subprocess.Popen(command, env=env,
+                                stdin=sys.stdin, stdout=sys.stdout,
+                                shell=shell, universal_newlines=True, encoding='unicode')
+
     except PermissionError:
         return None
 
@@ -28,46 +30,39 @@ if __name__ == "__main__":
     print("B9 Run Utility")
     signal.signal(signal.SIGINT, shutdown_handler)
 
-    ws_dir = b9py.B9.get_workspace_directory()
-    if not ws_dir:
-        print(Fore.RED + "Workspace directory must be set in B9_DIR_WORKSPACE or the")
-        print(Fore.RED + "Run utility must be started in the B9 root or workspace directory.")
-        print(Fore.RESET)
-        os.kill(os.getpid(), signal.SIGKILL)
-
     ap = argparse.ArgumentParser()
+    ap.add_argument("workspace", help="workspace name")
     ap.add_argument("package", help="package name")
     ap.add_argument("type", help="executable program in package")
-    ap.add_argument("-n", "--nodename", default="", help="node name")
-    ap.add_argument("-s", "--namespace", default="", help="topic namespace")
-    ap.add_argument("-t", "--topic", default="", help="topic")
-    ap.add_argument("-f", "--file", default="", help="file name")
+    ap.add_argument('rest', nargs=argparse.REMAINDER)
     args = vars(ap.parse_args())
 
-    current_env = os.environ.copy()
+    print(pyfiglet.figlet_format("B9 Run"))
 
-    exe = os.path.join(ws_dir, args['package'], args['type'])
-    cmd = [PYTHON_EXE, exe]
+    # Add py extension if not present
+    prog_name: str = args['type'].strip()
+    if not prog_name.endswith(".py"):
+        prog_name += ".py"
 
-    if args['file']:
-        cmd.append(args['file'])
+    # Build full executable file path
+    exe = os.path.join(args['workspace'], args['package'], prog_name)
+    if os.path.exists(exe):
+        cmd = [PYTHON_EXE, exe]
+        # Add executable's arguments
+        cmd.extend(args['rest'])
 
-    if args['nodename']:
-        cmd.append("--nodename=" + args['nodename'])
+        # Now run the damn thing
+        print("Run command: {}".format(cmd))
+        current_env = os.environ.copy()
+        p = start_process(cmd, current_env)
+        if p is None:
+            print("Permission error. Does '{}' have execute permissions?".format(args['type']))
+            os.kill(os.getpid(), signal.SIGKILL)
 
-    if args['namespace']:
-        cmd.append("--namespace=" + args['namespace'])
+        # Wait to complete
+        while p.poll() is None:
+            time.sleep(1)
 
-    if args['topic']:
-        cmd.append("--topic=" + args['topic'])
-
-    p = run(cmd, current_env)
-    if p is None:
-        print("Permission error. Does '{}' have execute permissions?".format(args['type']))
-        os.kill(os.getpid(), signal.SIGKILL)
-
-    # Wait to complete
-    while p.poll() is None:
-        time.sleep(1)
-
-    print('Exited with return code %d' % p.returncode)
+        print('Exited with return code %d' % p.returncode)
+    else:
+        print("Executable '{}' not found.".format(exe))

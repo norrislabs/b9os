@@ -236,7 +236,9 @@ if __name__ == "__main__":
                     print("Service call failed. {}".format(stat.status_type), end="\r\n")
                     os.kill(os.getpid(), signal.SIGKILL)
 
-                msg_type: str = stat.result_data.data['message_type'].lower()
+                msg_type: str = str(stat.result_data.data['message_type']).lower()
+                if msg_type == 'none':
+                    msg_type = 'null'
                 _srv_topics = []
                 if msg_type != "null":
                     if args['data'] == '?':

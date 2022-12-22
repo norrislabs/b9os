@@ -181,7 +181,7 @@ class ServiceClient(object):
         if self._srv_host is None:
             self._srv_host = "localhost"
 
-    def connect(self):
+    def connect(self) -> b9py.B9Status:
         result = b9py.B9Status.success_status()
 
         # Use port if specified
@@ -275,7 +275,7 @@ class ServiceClient(object):
         self._req_sock = self._ctx.socket(zmq.REQ)
         self._req_sock.connect(self._srv_uri)
 
-    def call_service(self, request):
+    def call_service(self, request) -> b9py.B9Status:
         loop = asyncio.get_event_loop()
         for retry in range(self._max_retry + 1):
             try:
@@ -318,7 +318,8 @@ class ServiceClient(object):
         return b9py.B9Status.success_status(response_msg)
 
     @staticmethod
-    def oneshot_service_call(nodename, topic, namespace, request, srv_port=None, srv_host=None, broker_uri=None):
+    def oneshot_service_call(nodename, topic, namespace, request,
+                             srv_port=None, srv_host=None, broker_uri=None) -> b9py.B9Status:
         client = b9py.ServiceClient(nodename, broker_uri, topic,
                                     namespace, srv_port, srv_host)
         result = client.connect()
