@@ -45,6 +45,7 @@ class B9(object):
             self._broker_uri = os.environ.get('B9_BROKER')
             if self._broker_uri is None:
                 # Still not specified so we have to assume localhost
+                logging.warning("B9 broker URI was not specified. Using localhost.")
                 self._broker_uri = 'localhost'
 
         # Register this node if not the broker and not a CLI tool

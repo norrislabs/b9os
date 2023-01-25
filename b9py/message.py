@@ -12,6 +12,7 @@ class Message(object):
     MSGTYPE_BOOL = 'Bool'
     MSGTYPE_LIST = 'List'
     MSGTYPE_DICT = 'Dict'
+    MSGTYPE_BYTES = 'Bytes'
 
     # Specialized message types
     MSGTYPE_DETECTION = 'Detection'
@@ -155,6 +156,11 @@ class MessageFactory(object):
     def create_message_dictionary(data, source=None):
         assert (isinstance(data, dict))
         return Message(Message.MSGTYPE_DICT, data, source)
+
+    @staticmethod
+    def create_message_bytes(data, source=None):
+        assert (isinstance(data, bytes))
+        return Message(Message.MSGTYPE_BYTES, data, source)
 
     @staticmethod
     def create_message_detection(data, source=None):

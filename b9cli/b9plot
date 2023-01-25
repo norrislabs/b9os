@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+
+import os
+import signal
+import argparse
+import logging
+import pyfiglet
+import matplotlib.pyplot as plt
+
+import b9py
+
+# Parameters
+x_len = 200  # Number of points to display
+y_range = [10, 40]  # Range of possible Y values to display
+
+
+def sigint_handler(_signum, _frame):
+    print('\nCtrl-C shutdown.', end="\r\n")
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+def animate(data):
+    global ys
+    global line
+
+    # Add y to list
+    pdata = extractor_func(data)
+    ys.append(pdata)
+
+    # Limit y list to set number of items
+    ys = ys[-x_len:]
+
+    # Update line with new Y values
+    line.set_ydata(ys)
+
+    plt.pause(0.01)
+
+
+def plot_sub_cb(_topic, message):
+    animate(message.data)
+
+
+def plot_timer_cb():
+    global make_call
+    make_call = True
+
+
+def extractor_0():
+    def closure(data):
+        return data
+    return closure
+
+
+def extractor_1(index: str):
+    if index.isdigit():
+        ix = int(index)
+    else:
+        ix = index
+
+    def closure(data):
+        return data[ix]
+    return closure
+
+
+def extractor_2(index1: str, index2: str):
+    if index1.isdigit():
+        ix1 = int(index1)
+    else:
+        ix1 = index1
+
+    if index2.isdigit():
+        ix2 = int(index2)
+    else:
+        ix2 = index2
+
+    def closure(data):
+        return data[ix1][ix2]
+    return closure
+
+
+def on_press(event):
+    if event.key == 'escape':
+        os.kill(os.getpid(), signal.SIGKILL)
+
+
+def on_close(_event):
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+if __name__ == "__main__":
+    print(pyfiglet.figlet_format("B9 Plot"))
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("source", help="data source (pub or srv")
+    ap.add_argument("topic", default=None, help="topic to plot")
+    ap.add_argument("-s", "--samples", type=int, default=100, help="X axis samples")
+    ap.add_argument("-r", "--range", type=int, nargs=2, default=[0, 100], help="Y axis range")
+    ap.add_argument("-e", "--extract", nargs='+', help="message data extractor")
+    ap.add_argument("-t", "--rate", type=float, default=1.0, help="Service sample rate")
+    args = vars(ap.parse_args())
+
+    # Init B9 core
+    b9 = b9py.B9('b9plot')
+    b9.start_logger(level=logging.INFO)
+    print(end="\r\n")
+
+    # Get plotter size
+    x_len = args['samples']
+    y_range = args['range']
+
+    # Build message data extractor function
+    extractor_func = None
+    extract_spec = args['extract']
+    if isinstance(extract_spec, list):
+        if len(extract_spec) == 1:
+            extractor_func = extractor_1(extract_spec[0])
+
+        elif len(extract_spec) == 2:
+            extractor_func = extractor_2(extract_spec[0], extract_spec[1])
+
+    if extractor_func is None:
+        logging.error('Missing or invalid extractor spec {}'.format(args['extract']))
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    # Create figure for plotting
+    fig = plt.figure("B9 Plot")
+    ax = fig.add_subplot(1, 1, 1)
+    xs = list(range(0, x_len))
+    ys = [0] * x_len
+    ax.set_ylim(y_range)
+
+    # Create a blank line. We will update the line in animate
+    line, = ax.plot(xs, ys)
+
+    # Add labels
+    plt.title(args['topic'])
+    plt.xlabel('Samples')
+    plt.ylabel('Value')
+
+    fig.canvas.mpl_connect('key_press_event', on_press)
+    fig.canvas.mpl_connect('close_event', on_close)
+
+    plt.show(block=False)
+    plt.pause(0.01)
+
+    if args['source'] == "pub":
+        # Setup plot subscriber
+        plot_sub = b9.create_subscriber(args['topic'], plot_sub_cb)
+        b9.spin_forever()
+
+    elif args['source'] == 'srv':
+        plot_srv_client = b9.create_service_client(args['topic'])
+        stat = plot_srv_client.connect()
+        if not stat.is_successful:
+            logging.error("Unable to create plot service client.")
+            os.kill(os.getpid(), signal.SIGKILL)
+
+        sample_interval = 1.0 / args['rate']
+        plot_srv_timer = b9.create_timer(sample_interval, plot_timer_cb)
+
+        make_call = False
+        while True:
+            if make_call:
+                status = plot_srv_client.call_service(b9py.MessageFactory.create_message_null())
+                animate(status.result_data.data)
+                make_call = False
+
+            b9.spin_once()
+    else:
+        logging.error("Unknown data source.")

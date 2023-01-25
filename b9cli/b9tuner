@@ -7,6 +7,7 @@ import logging
 import pyfiglet
 import xmltodict
 import PySimpleGUI as sG
+import pprint
 
 import b9py
 
@@ -76,32 +77,39 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, sigint_handler)
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("config_file", help="configuration file.")
+    ap.add_argument("namespace", help="topic namespace.")
+    ap.add_argument("config_spec", help="configuration spec file or topic.")
 
     args = vars(ap.parse_args())
 
-    # Get the broker's address
-    broker_uri = os.environ.get('B9_BROKER')
-    if broker_uri is None:
-        broker_uri = 'localhost'
-        print("B9 broker URI was not specified. Using localhost.", end="\r\n")
-
     # Init B9 core
-    b9 = b9py.B9('b9tuner_gui', broker_uri)
-    b9.start_logger(level=logging.DEBUG)
-    print(end="\r\n")
+    b9 = b9py.B9('b9tuner_gui')
+    b9.start_logger(level=logging.INFO)
 
-    # Make sure the specifed config file is available
-    if not os.path.exists(args['config_file']):
-        logging.info("Can not find configuartion file '{}'.".format(args['config_file']))
-        os.kill(os.getpid(), signal.SIGKILL)
+    # Load tuners spec from an XML file
+    if os.path.exists(args['config_spec']):
+        with open(args['config_spec'], 'r', encoding='utf-8') as file:
+            exp_xml = file.read()
 
-    # Open the config file and read the contents
-    with open(args['config_file'], 'r', encoding='utf-8') as file:
-        exp_xml = file.read()
+            # Parse the XML configuration document
+            tuners_spec = xmltodict.parse(exp_xml)
 
-    # Parse the XML configuration document
-    tuners_spec = xmltodict.parse(exp_xml)
+    # Load tuners spec from tuners spec service
+    else:
+        srv_cortex = b9.create_service_client("tuners/" + args['config_spec'], args['namespace'])
+        stat = srv_cortex.connect()
+        if not stat.is_successful:
+            logging.error("Unable to connect to tuners spec service '{}'.".format(args['config_spec']))
+            os.kill(os.getpid(), signal.SIGKILL)
+
+        result = srv_cortex.call_service(b9py.MessageFactory.create_message_null())
+        if result.is_successful:
+            tuners_spec = result.result_data.data
+        else:
+            logging.error("Unable to call tuners spec service '{}'.".format(args['config_spec']))
+            os.kill(os.getpid(), signal.SIGKILL)
+
+    logging.info("\n\r\t" + pprint.pformat(tuners_spec))
 
     # Get a list of tuners
     tuners = tuners_spec["tuners"]["tuner"]
@@ -110,7 +118,9 @@ if __name__ == "__main__":
 
     # Build each tuner's frame
     for tnr in tuners:
-        tuner = build_tuner(tnr["@name"],
+        if '_' in tnr["@name"]:
+            logging.warning("Do not use '_' in tuner name {}. They will be converted to '-'".format(tnr["@name"]))
+        tuner = build_tuner(tnr["@name"].replace("_", "-"),
                             tnr["@title"],
                             float(tnr["@start"]),
                             float(tnr["@end"]),
@@ -130,8 +140,8 @@ if __name__ == "__main__":
     window.Finalize()
 
     # Setup tuners publisher
-    pub = b9.create_publisher(tuners_spec['tuners']['@topic'],
-                              b9py.Message.MSGTYPE_DICT, tuners_spec['tuners']['@ns'])
+    pub = b9.create_publisher("tuners/" + tuners_spec['tuners']['@name'],
+                              b9py.Message.MSGTYPE_DICT, args['namespace'])
     stat = pub.advertise()
     if not stat.is_successful:
         status = "Publisher '{}' failed to advertise.".format(tuners_spec['tuners']['@topic'])
