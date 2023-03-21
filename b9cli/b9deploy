@@ -207,10 +207,29 @@ def indent(elem, level=0):
     return elem
 
 
+def remove_indentation(text):
+    # Split the text into lines
+    lines = text.split('\n')
+
+    # Remove the indentation from each line
+    for i in range(len(lines)):
+        lines[i] = lines[i].lstrip()
+
+    # Join the lines back together
+    text = '\n'.join(lines)
+
+    return text.strip() + '\n'
+
+
 def deploy_a_file(element):
     with tempfile.NamedTemporaryFile(mode="w+") as fp:
-        elem = indent(element)
-        text = ET.tostring(elem, encoding='unicode')
+        is_text = False
+        if len(list(element)) > 0:
+            elem = indent(element)
+            text = ET.tostring(elem, encoding='unicode')
+        else:
+            text = remove_indentation(element.text)
+            is_text = True
 
         fp.write(text)
         fp.flush()
@@ -223,7 +242,10 @@ def deploy_a_file(element):
             sftp.mkdir(file_dir, mode=744)
 
         sftp.put(fp.name, dest_file, preserve_mtime=True)
-        print("Created file '{}'".format(dest_file))
+        if is_text:
+            print("Created text file '{}'".format(dest_file))
+        else:
+            print("Created XML file '{}'".format(dest_file))
 
 
 if __name__ == "__main__":
