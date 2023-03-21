@@ -1,7 +1,6 @@
 import os
 import logging
 import xmltodict
-import pprint
 
 import b9py
 
@@ -11,12 +10,16 @@ class Tuner(object):
         self._b9 = b9core
         self._namespace = namespace
         self._nodename = self._b9.nodename
+        self._tuner_name = tuner_name
 
         # Topic for tuning values subscriber and tuner spec loader service
-        self._topic = "tuners/" + tuner_name
+        self._topic = "tuners/" + self._tuner_name
+
+        self._tuners_dir = "configuration"
+        self._tuners_ext = "tune"
 
         # Load tuner spec from this file if no loader callback specified
-        self._spec_file = "configuration/" + tuner_name + ".tune"
+        self._spec_file = "{}}/" + self._tuner_name + ".{}".format(self._tuners_dir, self._tuners_ext)
 
         # Setup tuner spec loader service
         # B9tuner will call this service to get the tuners spec
@@ -38,7 +41,7 @@ class Tuner(object):
     @staticmethod
     def _build_tune_values_cb(tuner_cb):
         def new_cb(topic, msg: b9py.Message):
-            logging.info("\n\r\t" + pprint.pformat(msg.data))
+            logging.info(msg.data)
             tuner_cb(topic, msg)
         return new_cb
 

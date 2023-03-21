@@ -8,6 +8,7 @@ import pyfiglet
 import xmltodict
 import PySimpleGUI as sG
 import pprint
+from colorama import Fore
 
 import b9py
 
@@ -34,6 +35,45 @@ def build_tuner(name, title, start, end, step, default):
     row = [btn_reset, sld_tuner, btn_set, ckb_live]
     frame = sG.Frame(title, [row], vertical_alignment='center', expand_x=True)
     return [frame]
+
+
+def failed(reg_result):
+    print("Registration service has failed. {}".format(reg_result.status_type), end="\r\n")
+
+
+def print_tuner_registrations_simple(regtype, items):
+    title = '------ Tuner Interfaces '
+
+    color = Fore.RESET
+    print('{}{}'.format(title, '-' * (105 - len(title))))
+    fmt = "{}{:42}{:16}{:34}{}" + Fore.RESET
+    print(fmt.format(color,
+                     'Topic',
+                     'Message_Type',
+                     'Node_Name',
+                     'Node_Host'), end="\r\n")
+    print('-' * 105)
+
+    sorted_topics = dict(sorted(items, key=lambda i: i[0]))
+    for item in sorted_topics:
+        regspecs = dict(items)[item]
+        for regspec in regspecs:
+            if '/tuners/' in regspec['topic'] and regtype == "sub":
+                if regspec['message_type'] is None:
+                    msgtype = "Any"
+                else:
+                    msgtype = regspec['message_type']
+
+                if 'has_publisher' in regspec.keys() and not regspec['has_publisher']:
+                    color = Fore.YELLOW
+                else:
+                    color = Fore.RESET
+
+                print(fmt.format(color,
+                                 regspec['topic'],
+                                 msgtype,
+                                 regspec['nodename'],
+                                 regspec['owner_host']), end="\r\n")
 
 
 sG.theme('DarkGrey9')
@@ -78,9 +118,33 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
     ap.add_argument("namespace", help="topic namespace.")
-    ap.add_argument("config_spec", help="configuration spec file or topic.")
+    ap.add_argument('config_spec', nargs='?', default="", help="configuration spec file or topic.")
 
     args = vars(ap.parse_args())
+
+    # Get the broker's address
+    broker_uri = os.environ.get('B9_BROKER')
+    if broker_uri is None:
+        broker_uri = 'localhost'
+        print("B9 broker URI was not specified. Using localhost.", end="\r\n")
+
+    # Init B9 core
+    b9 = b9py.B9('b9tuner_gui')
+    b9.start_logger(level=logging.INFO)
+
+    if args['namespace'] == 'list':
+        client = b9py.ServiceClient(b9.nodename, None, 'broker/registration/topic',
+                                    None, 5555, broker_uri)
+        stat = client.connect()
+        if stat.is_successful:
+            r = client.call_service(b9py.MessageFactory.create_topic_list_message('sub'))
+            if not r.is_successful:
+                failed(r)
+            else:
+                print()
+                print_tuner_registrations_simple('sub', r.result_data.data.items())
+                print()
+        exit(1)
 
     # Init B9 core
     b9 = b9py.B9('b9tuner_gui')

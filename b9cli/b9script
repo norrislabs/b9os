@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+
+import os
+import signal
+import argparse
+import pyfiglet
+import logging
+import b9py
+
+
+def shutdown_handler(_signum, _frame):
+    print('\nCtrl-C shutdown.', end="\r\n")
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+# Callback not used as yet
+def cmd_cb(_cmd, _params, _status):
+    pass
+
+
+if __name__ == "__main__":
+    print(pyfiglet.figlet_format("B9 Script"))
+
+    # Control-C handler
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("namespace", type=str, help="script topic namespace")
+    ap.add_argument('script', help="script name or script string.")
+    ap.add_argument('-d', '--debug', action='store_true', help='display in verbose mode')
+    args = vars(ap.parse_args())
+
+    # Init B9 core
+    b9 = b9py.B9('b9script_cli')
+    b9.start_logger2(level=logging.DEBUG if args['debug'] else logging.INFO, filename="test.log")
+    print()
+
+    # Setup the B9 scripting engine
+    _engine = b9py.ScriptEngine(b9, args['namespace'], command_cb=cmd_cb)
+
+    if _engine.is_aliases():
+        b9.logger.info("Loading topic alias file for namespace '{}'...".format(args['namespace']))
+        status = _engine.load_topic_aliases()
+        if not status.is_successful:
+            b9.logger.error(status.message)
+    else:
+        b9.logger.warning("No aliases file for namespace '{}'.".format(args['namespace']))
+
+    b9.logger.info("Loading script file...")
+    if _engine.is_script(args['script']):
+        # Execute script file
+        b9.logger.info("Executing script file...")
+        _engine.load_script(args['script'])
+        status = _engine.execute()
+    else:
+        # Execute a B9 script string
+        b9.logger.info("Executing script string...")
+        status = _engine.execute(args['script'])
+
+    # Show execution status if error
+    if not status.is_successful:
+        b9.logger.error(status.message)

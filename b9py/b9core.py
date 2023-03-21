@@ -5,6 +5,7 @@ import signal
 import socket
 import asyncio
 import logging
+import colorlog
 from colorama import Fore
 from netifaces import interfaces, ifaddresses, AF_INET
 
@@ -17,6 +18,8 @@ class B9(object):
         self._nodename = nodename
         self._is_broker = self._nodename.lower() == "broker"
         self._broker_uri = broker_uri
+
+        self._logger = None
 
         self._init_success = True
         self._init_status = "'{}' is initialized and registered.".format(self._nodename)
@@ -113,6 +116,7 @@ class B9(object):
             formatter = logging.Formatter('%(asctime)s : %(levelname)s : %(message)s\r')
             console.setFormatter(formatter)
             logging.getLogger("").addHandler(console)
+        self._logger = logging
 
         logging.info("B9 OS version: {}".format(b9py.__version__))
         logging.info("B9 Logger has started.")
@@ -125,6 +129,57 @@ class B9(object):
                 logging.info(self._init_status)
             else:
                 logging.error(self._init_status)
+
+    # Improved logger. Now in Color!
+    def start_logger2(self, level=logging.INFO, filename=None):
+        logging.basicConfig(level=level,
+                            filename=filename,
+                            filemode='w')
+
+        if filename is not None:
+            console = logging.FileHandler(filename)
+            console.setLevel(level)
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s\r')
+            console.setFormatter(formatter)
+
+            self._logger = logging.getLogger()
+            self._logger.handlers = []
+            self._logger.addHandler(console)
+
+        # Create a custom formatter that uses colors
+        formatter = colorlog.ColoredFormatter(
+            '%(log_color)s%(asctime)s - %(levelname)s - %(message)s%(reset)s',
+            log_colors={
+                'DEBUG': 'white',
+                'INFO': 'green',
+                'WARNING': 'bold_yellow',
+                'ERROR': 'bold_red',
+                'CRITICAL': 'red,bg_white',
+            },
+            secondary_log_colors={},
+            style='%'
+        )
+
+        if filename is None:
+            self._logger = logging.getLogger()
+            self._logger.handlers = []
+
+        # Create a logger and add a StreamHandler with the colored formatter
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        self._logger.addHandler(handler)
+
+        self._logger.info("B9 OS version: {}".format(b9py.__version__))
+        self._logger.info("B9 Logger has started.")
+        self._logger.info("'{}' is running on {} at {}".format(self._nodename, self._hostname, self._host_ip))
+        if not self._is_broker:
+            self._logger.info("'{}' is using broker at {}".format(self._nodename, self._broker_uri))
+        self._logger.info("'{}' process ID (PID) is {}".format(self._nodename, self._pid))
+        if len(self._init_status) > 0:
+            if self._init_success:
+                self._logger.info(self._init_status)
+            else:
+                self._logger.error(self._init_status)
 
     @staticmethod
     def _get_b9_directory(env_name, dir_name):
@@ -184,6 +239,10 @@ class B9(object):
     @property
     def is_localhost(self):
         return self._broker_uri == "localhost" or self._broker_uri.startswith("127.0")
+
+    @property
+    def logger(self) -> logging.RootLogger:
+        return self._logger
 
     @staticmethod
     async def _shutdown():
@@ -325,6 +384,7 @@ class B9Status(object):
     ERR_QUEUEFULL = 'ERR_QUEUEFULL'
     ERR_WRONG_MESSAGE = 'ERR_WRONG_MESSAGE'
     ERR_CANCELED = 'ERR_CANCELED'
+    ERR_NOT_IMPLEMENTED = "ERR_NOT_IMPLEMENTED"
 
     def __init__(self, success, status_type=None, status_text=None, result_data=None):
         self._success = success

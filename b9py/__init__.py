@@ -2,7 +2,7 @@
 # website:	http://www.norrislabs.com
 
 # set the version number
-__version__ = "0.0.56"
+__version__ = "0.0.58"
 
 from .b9core import B9
 from .b9core import B9Status
@@ -24,6 +24,8 @@ from .action import ActionClient
 from .parameter import Parameter
 
 from .tuner import Tuner
+
+from .script import ScriptEngine
 
 from .processors.b9processor import B9Processor
 from .processors.b9processor import SharedMessage
