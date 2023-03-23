@@ -27,7 +27,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("namespace", type=str, help="script topic namespace")
     ap.add_argument('script', help="script name or script string.")
-    ap.add_argument('-d', '--debug', action='store_true', help='display in verbose mode')
+    ap.add_argument('-d', '--debug', action='store_true', help='display debug messages')
     args = vars(ap.parse_args())
 
     # Init B9 core

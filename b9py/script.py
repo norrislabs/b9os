@@ -1,26 +1,8 @@
 import os
 import ast
-import time
-from functools import wraps
-
-
-import pyparsing
-from pyparsing import Word, alphas, nums, Group, OneOrMore, Keyword, QuotedString, pyparsing_common
+from pyparsing import Word, alphas, nums, Group, OneOrMore, Keyword, QuotedString, pyparsing_common, ParseException
 
 import b9py
-
-
-def timeit(func):
-    @wraps(func)
-    def timeit_wrapper(*args, **kwargs):
-        start_time = time.perf_counter()
-        result = func(*args, **kwargs)
-        end_time = time.perf_counter()
-        total_time = end_time - start_time
-        print(f'Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds')
-        return result
-
-    return timeit_wrapper
 
 
 class ScriptEngine(object):
@@ -32,6 +14,7 @@ class ScriptEngine(object):
 
         self._script_exe = None
         self._topic_aliases = {}
+        self._cancel = False
 
         self._publishers = {}
         self._services = {}
@@ -160,7 +143,10 @@ class ScriptEngine(object):
             elif isinstance(val, list):
                 msg = b9py.MessageFactory.create_message_list(val)
             elif isinstance(val, dict):
-                msg = b9py.MessageFactory.create_message_dictionary(val)
+                if 'X' in val.keys() and 'Y' in val.keys() and 'Z' in val.keys():
+                    msg = b9py.MessageFactory.create_message_vector3(val['X'], val['Y'], val['Z'])
+                else:
+                    msg = b9py.MessageFactory.create_message_dictionary(val)
 
             if msg is None:
                 self._b9.logger.error("Bad data type: '{}'.".format(type(val)))
@@ -241,6 +227,8 @@ class ScriptEngine(object):
         self._b9.logger.debug(f"Sleeping for {params['sleep_time']} seconds")
 
         for _ in range(int(params['sleep_time'] / 0.1)):
+            if self._cancel:
+                return b9py.B9Status.failed_status(b9py.B9Status.ERR_CANCELED, "Script canceled.")
             self._b9.spin_once(0.099)
 
         # Callback
@@ -272,7 +260,11 @@ class ScriptEngine(object):
             status = self._execute_command(command, alias_only)
             if not status.is_successful:
                 return status
+
+            if self._cancel:
+                return b9py.B9Status.failed_status(b9py.B9Status.ERR_CANCELED, "Script canceled.")
             self._b9.spin_once(quiet=False)
+
         return b9py.B9Status.success_status()
 
     def _execute(self, script_text, success_msg, alias_only):
@@ -285,7 +277,7 @@ class ScriptEngine(object):
         try:
             self._parse_and_execute_commands(self._script_exe, alias_only)
 
-        except pyparsing.ParseException as ex:
+        except ParseException as ex:
             return b9py.B9Status(False, status_text="Parsing error on line {}, col {}.".format(ex.lineno, ex.col))
 
         except SyntaxError as ex:
@@ -357,4 +349,9 @@ class ScriptEngine(object):
         return b9py.B9Status(True, status_text=status)
 
     def execute(self, script_text=None) -> b9py.B9Status:
-        return self._execute(script_text, "Executed script. No errors.", False)
+        self._cancel = False
+        return self._execute(script_text, "Script completed.", False)
+
+    def cancel(self) -> b9py.B9Status:
+        self._cancel = True
+        return b9py.B9Status(True, status_text="Script canceled.")

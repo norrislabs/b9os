@@ -223,6 +223,7 @@ def print_topic_registrations_simple(items, nodename=None):
 
 def get_namespace(items):
     # Potential danger! Assumes that there should be only one namespace
+    # Not used. Namespace is now passed via the command line
     namespaces = []
     sorted_topics = dict(sorted(items, key=lambda i: i[0]))
     for item in sorted_topics:
@@ -284,14 +285,19 @@ def completer(text, state):
 
 
 def action_status_cb(atopic, msg: b9py.Message):
+    global _running
+
     if args['verbose']:
-        status_text = ["IDLE", "STARTED", "STOPPED", "PAUSED", "FEEDBACK", "RESULT"]
+        status_text = ["IDLE", "STARTED", "STOPPED", "PAUSED", "FEEDBACK", "COMPLETE", "ERROR"]
         print("{:22} {:5} {:10} {}".format(is_action_topic(atopic),
                                            msg.sequence,
                                            status_text[msg.data['status_code']],
                                            msg.data['status_data']))
     else:
         print(msg)
+
+    if msg.data['status_code'] == b9py.action.ACTION_STATUS_COMPLETE:
+        _running = False
 
 
 if __name__ == "__main__":
@@ -311,24 +317,28 @@ if __name__ == "__main__":
 
     #  subparser for start
     parser_start = subparsers.add_parser('start')
+    parser_start.add_argument("namespace", type=str, help="action namespace.")
     parser_start.add_argument("topic", type=str, default="?", nargs='?', help="action topic.")
     parser_start.add_argument("data", default='?', nargs='?', help="message data.", type=yaml_load)
     parser_start.add_argument('-v', '--verbose', action='store_false', help='display in verbose mode')
 
     #  subparser for stop
     parser_stop = subparsers.add_parser('stop')
+    parser_stop.add_argument("namespace", type=str, help="action namespace.")
     parser_stop.add_argument("topic", type=str, default="?", nargs='?', help="action topic.")
     parser_stop.add_argument("data", default='?', nargs='?', help="message data.", type=yaml_load)
     parser_stop.add_argument('-v', '--verbose', action='store_false', help='display in verbose mode')
 
     #  subparser for pause
     parser_pause = subparsers.add_parser('pause')
+    parser_pause.add_argument("namespace", type=str, help="action namespace.")
     parser_pause.add_argument("topic", type=str, default="?", nargs='?', help="action topic.")
     parser_pause.add_argument("data", default='?', nargs='?', help="message data.", type=yaml_load)
     parser_pause.add_argument('-v', '--verbose', action='store_false', help='display in verbose mode')
 
     #  subparser for monitor
     parser_mon = subparsers.add_parser('monitor')
+    parser_mon.add_argument("namespace", type=str, help="action namespace.")
     parser_mon.add_argument("topic", type=str, default="?", nargs='?', help="action topic.")
     parser_mon.add_argument('-v', '--verbose', action='store_false', help='display in verbose mode')
 
@@ -384,7 +394,7 @@ if __name__ == "__main__":
                     print_topic_registrations(result.result_data.data.items(), args['nodename'])
             print(end="\r\n")
 
-        # Start/Stop/Pause/Update
+        # Start/Stop/Pause
         elif args['command'].lower() in ['start', 'stop', 'pause']:
             topic = None
             call_data = None
@@ -392,7 +402,7 @@ if __name__ == "__main__":
             if not r.is_successful:
                 failed(r)
             else:
-                ns = get_namespace(r.result_data.data.items())
+                ns = args['namespace']
                 if args['topic'] == '?':
                     # Topic not specified - show published and get a topic from the user
                     print_actions(r.result_data.data.items())
@@ -430,7 +440,9 @@ if __name__ == "__main__":
                         print("Status messages published by action '{}':".format(topic), end='\r\n')
 
                         signal.signal(signal.SIGINT, sigint_handler)
-                        b9.spin_forever()
+                        while _running:
+                            b9.spin_once(0.1)
+                        os.kill(os.getpid(), signal.SIGKILL)
 
         # Monitor
         elif args['command'].lower() == 'monitor':
@@ -440,7 +452,7 @@ if __name__ == "__main__":
             if not r.is_successful:
                 failed(r)
             else:
-                ns = get_namespace(r.result_data.data.items())
+                ns = args['namespace']
                 if args['topic'] == '?':
                     # Topic not specified - show available actions and get a topic from the user
                     print_actions(r.result_data.data.items())
